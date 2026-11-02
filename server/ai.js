@@ -15,7 +15,7 @@ const LANG_NAME = { en: 'English', te: 'Telugu', hi: 'Hindi' };
 
 let injectedClient = null; // tests inject a fake provider here
 export function setAIClient(fn) { injectedClient = fn; }
-export function isAIEnabled() { return !!injectedClient || !!process.env.AI_API_KEY || !!process.env.AI_BASE_URL; }
+export function isAIEnabled() { return !process.env.AI_OFF && (!!injectedClient || !!process.env.AI_API_KEY || !!process.env.AI_BASE_URL); }
 
 async function defaultClient(messages) {
   const base = process.env.AI_BASE_URL || 'https://api.openai.com/v1';
@@ -23,6 +23,9 @@ async function defaultClient(messages) {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...(process.env.AI_API_KEY ? { authorization: `Bearer ${process.env.AI_API_KEY}` } : {}) },
     body: JSON.stringify({ model: process.env.AI_MODEL || 'gpt-4o-mini', messages, temperature: 0.2, max_tokens: 120 }),
+    // Hard 10s ceiling: a tarpitted/slow provider must never hang a sign-off
+    // or block deploy startup. Timeout -> locked template fallback.
+    signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) throw new Error(`AI provider HTTP ${res.status}`);
   const data = await res.json();

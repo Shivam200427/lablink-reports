@@ -1,3 +1,8 @@
+// Seed runs offline: demo summaries use the locked templates, never the
+// network. Deploy startup must bind the port in seconds, not wait on a
+// third-party AI endpoint.
+process.env.AI_OFF = '1';
+
 // Seed with realistic SYNTHETIC sample data only. No real patients.
 import { db } from './db.js';
 import { hashPassword, now } from './crypto.js';

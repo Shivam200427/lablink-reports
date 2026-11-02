@@ -79,9 +79,14 @@ export async function generateSummariesForOrder(orderId) {
   let created = 0;
   // Sequential with a pause: polite to free providers, and any failure falls
   // back to the locked template for that language (never a burst of retries).
+  // Order-level AI budget: after 25s of trying, the rest of the order goes
+  // straight to templates so a sick provider can never stall a sign-off.
+  const aiBudgetUntil = Date.now() + 25000;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   for (const r of results) {
-    const texts = await buildSummaryTextsWithAI(r);
+    const texts = isAIEnabled() && Date.now() > aiBudgetUntil
+      ? buildSummaryTexts(r)
+      : await buildSummaryTextsWithAI(r);
     if (!texts) continue;
     ins.run(r.id, texts.lang_en, texts.lang_te, texts.lang_hi, texts.engine, texts.engine === 'template' ? 'high' : 'low');
     created++;
