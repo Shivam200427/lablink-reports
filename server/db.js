@@ -123,6 +123,22 @@ CREATE TABLE IF NOT EXISTS outbox (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Lab-verified family access: beyond a patient's own lab-recorded contact
+-- mobile (asserted at registration/walk-in), the front desk can delegate
+-- report access to a relative's mobile. Every grant/revoke is staff-attributed
+-- and audit-logged. A login sees exactly: patients whose contact mobile is
+-- the login mobile, plus patients with an active delegation to it.
+CREATE TABLE IF NOT EXISTS patient_access (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  patient_id INTEGER NOT NULL REFERENCES patients(id),
+  mobile TEXT NOT NULL,
+  relation TEXT,
+  granted_by INTEGER NOT NULL REFERENCES staff(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  revoked_at TEXT,
+  revoked_by INTEGER REFERENCES staff(id)
+);
+
 CREATE TABLE IF NOT EXISTS sms_budget (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   used INTEGER NOT NULL DEFAULT 0

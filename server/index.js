@@ -54,10 +54,20 @@ const setSessionCookie = (res, token) =>
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // ---------- patient auth ----------
+// Which patients a login mobile may see: lab-asserted contact mobile
+// (patients.mobile) plus active lab-granted delegations (patient_access).
+async function authorizedPatientIds(mobile) {
+  const rows = (await all(
+    `SELECT id FROM patients WHERE mobile=?
+     UNION
+     SELECT patient_id AS id FROM patient_access WHERE mobile=? AND revoked_at IS NULL`, [mobile, mobile]));
+  return rows.map((r) => r.id);
+}
+
 app.post('/api/auth/patient/request-otp', async (req, res) => {
   const mobile = String(req.body.mobile || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
   if (!/^\d{10}$/.test(mobile)) return res.status(400).json({ error: 'invalid_mobile' });
-  const known = (await get('SELECT COUNT(*) c FROM patients WHERE mobile=?', [mobile])).c > 0;
+  const known = (await authorizedPatientIds(mobile)).length > 0;
   if (!known) {
     await logAccess('anonymous', null, 'otp_unknown_mobile', 'mobile', null, mask(mobile));
     return res.status(404).json({ error: 'not_registered' });
@@ -99,7 +109,10 @@ app.post('/api/auth/patient/verify', async (req, res) => {
   const mobile = String(req.body.mobile || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
   const v = await verifyOTP(mobile, String(req.body.code || ''), 'login', { consume: req.body.consent === true });
   if (v.error) return res.status(400).json(v);
-  const patients = (await all('SELECT id, full_name, age, sex, preferred_language, consent_given_at FROM patients WHERE mobile=?', [mobile]));
+  const ids = await authorizedPatientIds(mobile);
+  const patients = ids.length
+    ? (await all(`SELECT id, full_name, age, sex, preferred_language, consent_given_at FROM patients WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY id`, ids))
+    : [];
   const needsConsent = patients.some(p => !p.consent_given_at);
   if (needsConsent && req.body.consent !== true) {
     // OTP verified but not consumed yet; client re-submits with consent
@@ -118,31 +131,42 @@ app.post('/api/auth/patient/verify', async (req, res) => {
 
 app.get('/api/patient/me', requireRole('patient'), async (req, res) => {
   const mobile = req.actor.scope.replace('mobile:', '');
-  const patients = (await all('SELECT id, full_name, age, sex, preferred_language FROM patients WHERE mobile=?', [mobile]));
+  const ids = await authorizedPatientIds(mobile);
+  const patients = ids.length
+    ? (await all(`SELECT id, full_name, age, sex, preferred_language FROM patients WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY id`, ids))
+    : [];
   res.json({ mobile: mask(mobile), patients });
 });
 
 app.post('/api/patient/language', requireRole('patient'), async (req, res) => {
   const lang = req.body.lang;
   if (!['en', 'te', 'hi'].includes(lang)) return res.status(400).json({ error: 'bad_lang' });
-  (await run('UPDATE patients SET preferred_language=? WHERE id=?', [lang, req.body.patientId ?? req.actor.id]));
+  const mobile = req.actor.scope.replace('mobile:', '');
+  const ids = await authorizedPatientIds(mobile);
+  const pid = req.body.patientId ?? req.actor.id;
+  if (!ids.includes(Number(pid))) return res.status(403).json({ error: 'not_authorized' });
+  (await run('UPDATE patients SET preferred_language=? WHERE id=?', [lang, pid]));
   res.json({ ok: true });
 });
 
 async function orderForPatient(req, orderId) {
   const mobile = req.actor.scope.replace('mobile:', '');
+  const ids = await authorizedPatientIds(mobile);
+  if (!ids.length) return null;
   return (await get(
     `SELECT o.*, p.full_name patient_name, p.age, p.sex, p.mobile, p.preferred_language, d.full_name doctor_name
      FROM orders o JOIN patients p ON p.id=o.patient_id LEFT JOIN doctors d ON d.id=o.doctor_id
-     WHERE o.id=? AND p.mobile=?`, [orderId, mobile]));
+     WHERE o.id=? AND p.id IN (${ids.map(() => '?').join(',')})`, [orderId, ...ids]));
 }
 
 app.get('/api/patient/orders', requireRole('patient'), async (req, res) => {
   const mobile = req.actor.scope.replace('mobile:', '');
+  const ids = await authorizedPatientIds(mobile);
+  if (!ids.length) return res.json({ orders: [] });
   const rows = (await all(
     `SELECT o.id, o.order_code, o.status, o.ordered_at, o.signed_at, o.patient_id, p.full_name patient_name, d.full_name doctor_name
      FROM orders o JOIN patients p ON p.id=o.patient_id LEFT JOIN doctors d ON d.id=o.doctor_id
-     WHERE p.mobile=? ORDER BY o.ordered_at DESC, o.id DESC`, [mobile]));
+     WHERE p.id IN (${ids.map(() => '?').join(',')}) ORDER BY o.ordered_at DESC, o.id DESC`, ids));
   res.json({ orders: rows });
 });
 
@@ -309,8 +333,37 @@ app.get('/api/staff/patients/:id', requireRole('staff'), async (req, res) => {
   const access = (await all(
     `SELECT * FROM access_log WHERE (entity='order' AND entity_id IN (SELECT id FROM orders WHERE patient_id=?))
      OR (entity='mobile' AND detail LIKE ?) ORDER BY id DESC LIMIT 50`, [p.id, `%${mask(p.mobile)}%`]));
+  const familyAccess = (await all(
+    `SELECT pa.id, pa.mobile, pa.relation, pa.created_at, s.full_name granted_by_name
+     FROM patient_access pa JOIN staff s ON s.id=pa.granted_by
+     WHERE pa.patient_id=? AND pa.revoked_at IS NULL ORDER BY pa.id DESC`, [p.id]));
   await logAccess('staff', req.actor.id, 'patient_lookup', 'patient', p.id, p.full_name);
-  res.json({ patient: { ...p, mobile: mask(p.mobile) }, orders, messages, access });
+  res.json({ patient: { ...p, mobile: mask(p.mobile) }, orders, messages, access,
+    familyAccess: familyAccess.map((g) => ({ ...g, mobile: mask(g.mobile) })) });
+});
+
+// Lab-verified delegation: front desk grants a relative's mobile access to
+// this patient's reports. Granting is explicit, staff-attributed, revocable.
+app.post('/api/staff/patients/:id/access', requireRole('staff'), async (req, res) => {
+  const p = (await get('SELECT * FROM patients WHERE id=?', [req.params.id]));
+  if (!p) return res.status(404).json({ error: 'not_found' });
+  const mobile = String(req.body.mobile || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+  if (!/^\d{10}$/.test(mobile)) return res.status(400).json({ error: 'invalid_mobile' });
+  if (mobile === p.mobile) return res.status(409).json({ error: 'own_contact_mobile' });
+  const relation = String(req.body.relation || '').trim().slice(0, 40) || null;
+  const existing = (await get('SELECT * FROM patient_access WHERE patient_id=? AND mobile=? AND revoked_at IS NULL', [p.id, mobile]));
+  if (existing) return res.status(409).json({ error: 'already_granted' });
+  const id = await insert('INSERT INTO patient_access (patient_id, mobile, relation, granted_by) VALUES (?,?,?,?)', [p.id, mobile, relation, req.actor.id]);
+  await logAccess('staff', req.actor.id, 'family_access_grant', 'patient', p.id, `${mask(mobile)}${relation ? ' (' + relation + ')' : ''}`);
+  res.json({ ok: true, id });
+});
+
+app.post('/api/staff/patients/:id/access/:grantId/revoke', requireRole('staff'), async (req, res) => {
+  const g = (await get('SELECT * FROM patient_access WHERE id=? AND patient_id=? AND revoked_at IS NULL', [req.params.grantId, req.params.id]));
+  if (!g) return res.status(404).json({ error: 'not_found' });
+  (await run('UPDATE patient_access SET revoked_at=?, revoked_by=? WHERE id=?', [now(), req.actor.id, g.id]));
+  await logAccess('staff', req.actor.id, 'family_access_revoke', 'patient', g.patient_id, mask(g.mobile));
+  res.json({ ok: true });
 });
 
 app.post('/api/staff/resend', requireRole('staff'), async (req, res) => {

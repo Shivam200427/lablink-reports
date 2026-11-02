@@ -1,4 +1,8 @@
-import { all, run } from './db.js';
+import { all, logAccess, run } from './db.js';
+
+// AI diagnostics must never break a sign-off (tests call the engine without a
+// database, and a logging failure is not worth losing a report over).
+const logSafe = async (...args) => { try { await logAccess(...args); } catch {} };
 import { findKBEntry } from './kb.js';
 import { isAIEnabled, generateAISummary, validateAISummary } from './ai.js';
 
@@ -65,12 +69,17 @@ export async function buildSummaryTextsWithAI(result) {
         new Promise((_, reject) => setTimeout(() => reject(new Error(`AI call exceeded ${callCapMs}ms`)), callCapMs)),
       ]);
       if (text && validateAISummary(text, result)) return [lang, text.trim()];
+      if (text) await logSafe('system', null, 'ai_summary_rejected', 'result', result.id ?? null,
+        `${result.parameter} (${lang}): output failed validation`.slice(0, 300));
     } catch (e) {
       // Diagnosable but privacy-safe: test name + provider error only, never
       // patient identity or result values. Template stays the floor.
       console.warn(`AI summary fallback (${result.parameter}, ${lang}): ${e.message}`);
+      await logSafe('system', null, 'ai_summary_fallback', 'result', result.id ?? null,
+        `${result.parameter} (${lang}): ${e.message}`.slice(0, 300));
     }
     return null;
+    // (validation rejections also fall back; logged below)
   }));
   let aiUsed = 0;
   for (const hit of settled) if (hit) { out[`lang_${hit[0]}`] = hit[1]; aiUsed++; }

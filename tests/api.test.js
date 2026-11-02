@@ -374,6 +374,46 @@ describe('manual front-desk order entry', () => {
     expect(row.no_range).toBe(1); // staff see the missing range as a data-quality signal
   });
 
+  it('lab-verified family access: delegated relative sees only the granted patient, revoke closes it', async () => {
+    const a = agent();
+    await staffLogin(a);
+    // two patients on one household number (lab-asserted contact)
+    const mk = (name) => a.post('/api/staff/orders').send({ patientName: name, mobile: '9800000095', results: [{ parameter: 'LDL Cholesterol', value: '142', referenceRange: '0-100' }] });
+    const r1 = await mk('Household One'); expect(r1.status).toBe(200);
+    const r2 = await mk('Household Two'); expect(r2.status).toBe(200);
+    const plist = await a.get('/api/staff/patients?q=Household');
+    const p1 = plist.body.patients.find((x) => x.full_name === 'Household One');
+    const p2 = plist.body.patients.find((x) => x.full_name === 'Household Two');
+    expect(p1 && p2).toBeTruthy();
+    // relative's own number starts with no access at all
+    const rel = agent();
+    expect((await rel.post('/api/auth/patient/request-otp').send({ mobile: '9800000096' })).status).toBe(404);
+    // front desk grants the relative access to Household One only
+    const g = await a.post(`/api/staff/patients/${p1.id}/access`).send({ mobile: '9800000096', relation: 'son' });
+    expect(g.body.ok).toBe(true);
+    expect((await a.post(`/api/staff/patients/${p1.id}/access`).send({ mobile: '9800000096' })).status).toBe(409);
+    // relative logs in: sees Household One, NOT Household Two
+    await rel.post('/api/auth/patient/request-otp').send({ mobile: '9800000096' });
+    const msgs = await a.get('/api/staff/outbox?mobile=9800000096');
+    const code = msgs.body.messages.find((m) => m.kind === 'otp').body.match(/OTP is (\d{6})/)[1];
+    const v = await rel.post('/api/auth/patient/verify').send({ mobile: '9800000096', code, consent: true });
+    expect(v.body.ok).toBe(true);
+    expect(v.body.patients.map((x) => x.full_name)).toEqual(['Household One']);
+    const orders = await rel.get('/api/patient/orders');
+    expect(orders.body.orders.map((o) => o.patient_name)).toEqual(['Household One']);
+    const detail = await rel.get(`/api/patient/orders/${r1.body.orderId}`);
+    expect(detail.status).toBe(200);
+    expect((await rel.get(`/api/patient/orders/${r2.body.orderId}`)).status).toBe(404);
+    // revoke closes access completely
+    const det = await a.get(`/api/staff/patients/${p1.id}`);
+    const grantId = det.body.familyAccess[0].id;
+    expect(det.body.familyAccess[0].relation).toBe('son');
+    expect((await a.post(`/api/staff/patients/${p1.id}/access/${grantId}/revoke`).send({})).body.ok).toBe(true);
+    const orders2 = await rel.get('/api/patient/orders');
+    expect(orders2.body.orders).toEqual([]);
+    expect((await rel.get(`/api/patient/orders/${r1.body.orderId}`)).status).toBe(404);
+  });
+
   it('validates input and enforces the staff role', async () => {
     const a = agent();
     expect((await a.post('/api/staff/orders').send({ patientName: 'X Y', mobile: '9800000092', results: [{ parameter: 'Hb', value: '10' }] })).status).toBe(401);

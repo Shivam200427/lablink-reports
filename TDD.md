@@ -221,7 +221,7 @@ patient, status).
 
 ## 11. Reliability notes
 
-- Sign-off can never be stalled by a sick AI provider: every provider call has a hard 10s timeout (AI_TIMEOUT_MS), generation stops attempting AI after a 25s per-order budget (AI_ORDER_BUDGET_MS), and the locked template is always the floor.
+- Sign-off can never be stalled by a sick AI provider: every provider call has a hard 10s timeout (AI_TIMEOUT_MS), generation stops attempting AI after a 25s per-order budget (AI_ORDER_BUDGET_MS), and the locked template is always the floor. Every AI fallback (timeout/provider error) and every rejected AI output is recorded in the access log (`ai_summary_fallback` / `ai_summary_rejected`, test name + provider error only - never patient identity or values), so the template-vs-AI ratio is diagnosable from the ops console. Patients see an honest per-summary chip: AI-written / AI + standard wording / Standard wording.
 - Deploy startup is deterministic: the seed never touches the network and only seeds an EMPTY database, so restarts and redeploys never wipe data. On the demo host the database is Render's free Postgres (survives restarts and redeploys; expires 2026-12-02 - see Limitations); locally it is SQLite on the instance filesystem.
 - Provider errors are logged (test name + error only, no patient data) so template fallbacks are diagnosable in host logs.
 
@@ -256,15 +256,17 @@ patient, status).
 
 **Assumptions the lab must review before any real use:**
 
-- **Family number means household access:** the OTP verifies possession of the
-  family phone, **not the individual patient**. Anyone holding that phone
-  during the OTP window can open every patient registered to that number.
-  This means the brief's "no report opened by the wrong person" success
-  criterion is NOT fully met inside a household - that is a residual risk and
-  an unresolved client decision, not a criterion this build claims to satisfy.
+- **Family access is lab-verified:** a login with a mobile number sees exactly
+  the patients the lab has tied to that number - patients whose contact mobile
+  it is (asserted by the lab at registration/walk-in) plus explicit delegations
+  the front desk records in the console (`patient_access`, with relation,
+  granting staff member, and full audit log; revocable). The OTP verifies
+  possession of the phone; the lab verifies whose reports that phone may open.
+  Residual risk: everyone registered to the SAME shared number still sees each
+  other (that is what sharing a contact number means) - separating them needs
+  per-patient numbers at registration, a registration-desk practice, not code.
   Mitigations in place: per-report OTP on secure links, 72-hour link expiry,
-  and a full access log. A stricter option (per-patient registered numbers) is
-  a product decision the lab must own.
+  explicit delegation grants, and a full access log.
 - **Sample critical thresholds:** the critical limits in `server/kb.js` (e.g.
   potassium, haemoglobin) are SAMPLE values chosen to exercise the critical
   flow. They are NOT clinically approved - the pathologist must review and set

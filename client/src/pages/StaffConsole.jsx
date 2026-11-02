@@ -9,6 +9,27 @@ export default function StaffConsole() {
   const [q, setQ] = React.useState('');
   const [results, setResults] = React.useState([]);
   const [detail, setDetail] = React.useState(null);
+  const [grantMobile, setGrantMobile] = React.useState('');
+  const [grantRelation, setGrantRelation] = React.useState('');
+  const [grantMsg, setGrantMsg] = React.useState('');
+
+  async function grantAccess(patientId) {
+    setGrantMsg('');
+    const r = await api(`/api/staff/patients/${patientId}/access`, { method: 'POST', body: { mobile: grantMobile, relation: grantRelation } });
+    if (r.ok) {
+      setGrantMobile(''); setGrantRelation('');
+      open(patientId);
+    } else {
+      setGrantMsg(r.data && r.data.error === 'already_granted' ? 'That number already has access.'
+        : r.data && r.data.error === 'own_contact_mobile' ? 'That is the patient\'s own registered number.'
+        : 'Could not grant access - check the 10-digit mobile.');
+    }
+  }
+
+  async function revokeAccess(patientId, grantId) {
+    const r = await api(`/api/staff/patients/${patientId}/access/${grantId}/revoke`, { method: 'POST' });
+    if (r.ok) open(patientId);
+  }
   const [msg, setMsg] = React.useState('');
 
   React.useEffect(() => { (async () => { const r = await api('/api/staff/me'); if (!r.ok) nav('/staff'); })(); }, []);
@@ -63,6 +84,35 @@ export default function StaffConsole() {
             <div className="text-base text-slate-500">{detail.patient.age}/{detail.patient.sex} · {detail.patient.mobile}</div>
           </div>
           <div className="card">
+            <h3 className="mb-1 text-lg font-bold text-slate-900">Family access</h3>
+            <p className="mb-3 text-sm text-slate-500">
+              Who may see this patient's reports after mobile OTP. The registered contact
+              number ({detail.patient.mobile}) was verified by the lab at registration.
+              Grant access to a relative's number below - every grant and revoke is logged.
+            </p>
+            <div className="mb-3 space-y-2">
+              {(detail.familyAccess || []).length === 0 && <p className="text-sm text-slate-500">No relatives have access.</p>}
+              {(detail.familyAccess || []).map((g) => (
+                <div key={g.id} className="flex items-center justify-between rounded-xl border border-slate-100 px-4 py-2">
+                  <div className="text-sm text-slate-700">
+                    <span className="font-medium">{g.mobile}</span>{g.relation ? ` · ${g.relation}` : ''}
+                    <span className="text-slate-400"> · by {g.granted_by_name} · {(g.created_at || '').slice(0, 10)}</span>
+                  </div>
+                  <button className="text-sm font-medium text-red-600 underline" onClick={() => revokeAccess(detail.patient.id, g.id)}>Revoke</button>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <input className="input w-44" inputMode="numeric" maxLength={10} placeholder="Relative mobile"
+                value={grantMobile} onChange={(e) => setGrantMobile(e.target.value.replace(/\D/g, ''))} />
+              <input className="input w-40" maxLength={40} placeholder="Relation (e.g. son)"
+                value={grantRelation} onChange={(e) => setGrantRelation(e.target.value)} />
+              <button className="btn px-4 text-base" disabled={grantMobile.length !== 10}
+                onClick={() => grantAccess(detail.patient.id)}>Grant access</button>
+            </div>
+            {grantMsg && <p className="mt-2 text-sm text-red-600">{grantMsg}</p>}
+          </div>
+          <div className="card">
             <h3 className="mb-3 text-lg font-bold text-slate-900">Orders</h3>
             <div className="space-y-2">
               {detail.orders.map((o) => (
@@ -84,7 +134,7 @@ export default function StaffConsole() {
                 <div key={m.id} className="rounded-xl border border-slate-100 px-4 py-3">
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-slate-800">{m.channel} · {m.kind}</span>
-                    <span className={`chip ${m.status === 'delivered' ? 'bg-brand-100 text-brand-800' : m.status === 'failed' ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-600'}`}>{m.status}</span>
+                    <span className={`chip ${m.provider ? 'bg-sky-100 text-sky-800' : m.status === 'delivered' ? 'bg-brand-100 text-brand-800' : m.status === 'failed' ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-600'}`}>{m.provider ? `provider · ${m.status}` : `mock · ${m.status}`}</span>
                   </div>
                   <div className="mt-1 break-all text-sm text-slate-500">{m.body}</div>
                   <div className="mt-1 flex items-center justify-between text-sm text-slate-400">

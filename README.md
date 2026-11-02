@@ -9,7 +9,9 @@ the LIS uploads a CSV, the pathologist signs off an order, and the patient gets 
 link by WhatsApp/SMS (mocked). The link expires in 72 hours and asks for an OTP sent to the
 registered mobile number before the report opens. Out-of-range results get a plain-language
 summary in English, Telugu or Hindi. Critical values are never summarised - they create a
-callback task for the front desk instead. One mobile number can cover a whole family.
+callback task for the front desk instead. One mobile number can cover a whole family -
+and who may see whose reports is lab-verified: the front desk grants and revokes
+relatives' access per patient, with every change audit-logged.
 
 ## Stack
 
