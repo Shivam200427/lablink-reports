@@ -4,7 +4,7 @@
 **Live app:** not deployed publicly (submission constraint: no paid services; runs locally - see deployment.md for one-command setup and free-tier steps)
 
 **Product:** secure lab-report delivery for City Diagnostics ("Company A"), Vijayawada
-**Author:** Shivam Jain - **Date:** 2 November 2026 - **Stack:** Node.js 22 / Express / SQLite - React 19 / Vite / Tailwind
+**Author:** Shivam Jain, built with AI assistance (the brief encourages AI) - **Date:** 2 November 2026 - **Stack:** Node.js 22 / Express / SQLite - React 19 / Vite / Tailwind
 
 ---
 
