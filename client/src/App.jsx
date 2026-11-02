@@ -10,6 +10,7 @@ import StaffImport from './pages/StaffImport.jsx';
 import StaffTasks from './pages/StaffTasks.jsx';
 import StaffSample from './pages/StaffSample.jsx';
 import OpsReport from './pages/OpsReport.jsx';
+import StaffOutbox from './pages/StaffOutbox.jsx';
 import DoctorLogin from './pages/DoctorLogin.jsx';
 import DoctorReports from './pages/DoctorReports.jsx';
 
@@ -56,6 +57,7 @@ export default function App() {
           <Route path="/staff/tasks" element={<StaffTasks />} />
           <Route path="/staff/sample" element={<StaffSample />} />
           <Route path="/staff/ops" element={<OpsReport />} />
+          <Route path="/staff/messages" element={<StaffOutbox />} />
           <Route path="/doctor" element={<DoctorLogin />} />
           <Route path="/doctor/reports" element={<DoctorReports />} />
         </Routes>

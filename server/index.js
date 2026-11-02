@@ -336,7 +336,12 @@ app.post('/api/staff/summary-flags/:id/review', requireRole('staff'), (req, res)
 });
 
 app.get('/api/staff/outbox', requireRole('staff'), (req, res) => {
-  const rows = db.prepare('SELECT * FROM outbox ORDER BY id DESC LIMIT 100').all()
+  // Optional exact-mobile filter happens BEFORE masking, so front desk can
+  // pull one person's delivery history (e.g. to read a doctor's demo OTP).
+  const mobile = String(req.query.mobile || '').replace(/\D/g, '');
+  const rows = (/^\d{10}$/.test(mobile)
+    ? db.prepare('SELECT * FROM outbox WHERE to_mobile=? ORDER BY id DESC LIMIT 100').all(mobile)
+    : db.prepare('SELECT * FROM outbox ORDER BY id DESC LIMIT 100').all())
     .map(m => ({ ...m, to_mobile: mask(m.to_mobile) }));
   res.json({ messages: rows });
 });

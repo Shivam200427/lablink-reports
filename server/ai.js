@@ -23,9 +23,10 @@ async function defaultClient(messages) {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...(process.env.AI_API_KEY ? { authorization: `Bearer ${process.env.AI_API_KEY}` } : {}) },
     body: JSON.stringify({ model: process.env.AI_MODEL || 'gpt-4o-mini', messages, temperature: 0.2, max_tokens: 120 }),
-    // Hard 10s ceiling: a tarpitted/slow provider must never hang a sign-off
-    // or block deploy startup. Timeout -> locked template fallback.
-    signal: AbortSignal.timeout(10000),
+    // Hard ceiling (default 10s, AI_TIMEOUT_MS override): a slow or
+    // unreachable provider must never hang a sign-off or deploy startup.
+    // Timeout -> locked template fallback.
+    signal: AbortSignal.timeout(Number(process.env.AI_TIMEOUT_MS) || 10000),
   });
   if (!res.ok) throw new Error(`AI provider HTTP ${res.status}`);
   const data = await res.json();

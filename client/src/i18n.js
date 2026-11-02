@@ -4,6 +4,7 @@ const D = {
   sendOtp: { en: 'Send OTP', te: 'OTP పంపండి', hi: 'OTP भेजें' },
   enterOtp: { en: 'Enter the 6-digit code sent to you by SMS', te: 'మీకు SMS ద్వారా వచ్చిన 6 అంకెల కోడ్ నమోదు చేయండి', hi: 'SMS से आया 6-अंकों का कोड दर्ज करें' },
   verify: { en: 'Verify', te: 'ధృవీకరించండి', hi: 'सत्यापित करें' },
+  firstTime: { en: 'First time here? Your number gets registered when you give it at any Company A lab or collection centre.', te: 'మొదటిసారి వస్తున్నారా? మీ నంబర్ ఏ Company A ల్యాబ్ లేదా కలెక్షన్ సెంటర్‌లోనైనా ఇచ్చినప్పుడు నమోదవుతుంది.', hi: 'पहली बार? किसी भी Company A लैब या कलेक्शन सेंटर पर नंबर देने पर वह पंजीकृत हो जाता है।' },
   notRegistered: { en: 'This number is not registered with us. Please contact the lab.', te: 'ఈ నంబర్ మా వద్ద నమోదు లేదు. దయచేసి ల్యాబ్‌ను సంప్రదించండి.', hi: 'यह नंबर हमारे यहां पंजीकृत नहीं है। कृपया लैब से संपर्क करें।' },
   wrongOtp: { en: 'That code did not match. Please try again.', te: 'ఆ కోడ్ సరిపోలలేదు. మళ్లీ ప్రయత్నించండి.', hi: 'कोड मेल नहीं खाया। कृपया फिर कोशिश करें।' },
   consentText: { en: 'I agree to Company A Diagnostics storing my lab reports and mobile number to deliver my reports, under the DPDP Act 2023.', te: 'DPDP చట్టం 2023 ప్రకారం, నా నివేదికలను పంపడానికి Company A Diagnostics నా ల్యాబ్ నివేదికలను మరియు మొబైల్ నంబర్‌ను నిల్వ చేయడానికి నేను అంగీకరిస్తున్నాను.', hi: 'DPDP अधिनियम 2023 के तहत, मेरी रिपोर्ट भेजने के लिए Company A Diagnostics मेरी लैब रिपोर्ट और मोबाइल नंबर सहेजने के लिए मैं सहमत हूं।' },

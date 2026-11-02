@@ -52,12 +52,18 @@ export async function buildSummaryTextsWithAI(result) {
   const base = buildSummaryTexts(result);
   if (!base || !isAIEnabled()) return base;
   const out = { ...base };
+  const callCapMs = Number(process.env.AI_TIMEOUT_MS) || 10000;
   const settled = await Promise.all(['en', 'te', 'hi'].map(async (lang) => {
     try {
-      const text = await generateAISummary({
-        parameter: result.parameter, value: result.value, unit: result.unit,
-        referenceRange: result.reference_range, flag: result.flag, lang,
-      });
+      // Hard race cap: even a provider client that never resolves cannot
+      // hang a sign-off. Timeout -> locked template for this language.
+      const text = await Promise.race([
+        generateAISummary({
+          parameter: result.parameter, value: result.value, unit: result.unit,
+          referenceRange: result.reference_range, flag: result.flag, lang,
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`AI call exceeded ${callCapMs}ms`)), callCapMs)),
+      ]);
       if (text && validateAISummary(text, result)) return [lang, text.trim()];
     } catch (e) {
       // Diagnosable but privacy-safe: test name + provider error only, never
@@ -81,7 +87,7 @@ export async function generateSummariesForOrder(orderId) {
   // back to the locked template for that language (never a burst of retries).
   // Order-level AI budget: after 25s of trying, the rest of the order goes
   // straight to templates so a sick provider can never stall a sign-off.
-  const aiBudgetUntil = Date.now() + 25000;
+  const aiBudgetUntil = Date.now() + (Number(process.env.AI_ORDER_BUDGET_MS) || 25000);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   for (const r of results) {
     const texts = isAIEnabled() && Date.now() > aiBudgetUntil

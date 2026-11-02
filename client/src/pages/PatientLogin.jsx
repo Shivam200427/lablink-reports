@@ -42,6 +42,7 @@ export default function PatientLogin() {
               value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))} />
             {error && <p className="mb-3 text-base text-red-600">{error}</p>}
             <button className="btn w-full" disabled={busy || mobile.length !== 10}>{t(lang, 'sendOtp')}</button>
+            <p className="mt-4 text-base leading-relaxed text-slate-500">{t(lang, 'firstTime')}</p>
           </form>
         )}
         {step === 'otp' && (
