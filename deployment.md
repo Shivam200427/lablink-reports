@@ -39,7 +39,7 @@ Tests: `npm test`
 | --- | --- |
 | Patient | mobile `9000000001` (Lakshmi's family) or `9000000004` (Srinivas & Padma) - OTP appears in the server log and the staff console's Messages view |
 | Front desk | username `frontdesk`, password `Lab@2026` |
-| Doctor | mobile `9000000020` (Dr. P. Anitha) - OTP login |
+| Doctor | mobile `9100000002` (Dr. P. Anitha) - OTP login |
 | Lab owner / ops | username `ops`, password `Ops@2026` |
 | Pathologist (import + sign-off) | username `patho`, password `Patho@2026` |
 
@@ -51,9 +51,12 @@ Tests: `npm test`
 4. Start command: `npm run seed && npm start`
    (`seed` is idempotent for a fresh database; remove it once real data exists.)
 5. Set environment variables: `BASE_URL=https://<your-app>.onrender.com` and a random `PASSWORD_SALT`.
-6. Add a persistent disk mounted at `/opt/render/project/src/data` (or set `DATA_DIR` to the
-   mount path) so the SQLite database and PDFs survive restarts. Without a disk the data
-   resets on every redeploy - acceptable for a demo, not for production.
+6. Persistence on free tier: the free web-service filesystem is ephemeral - SQLite and
+   generated PDFs are lost on every redeploy, restart or spin-down (acceptable for this
+   demo; the seed recreates the fixture on an empty database). For durability: a
+   persistent disk (paid) mounted at the `DATA_DIR` path, or moving the DB to a managed
+   Postgres (Render's free Postgres is 1 GB, expires 30 days after creation, no card) -
+   see the limitation notes in the TDD.
 
 The same steps work on Railway, Fly.io or a small VM (`npm ci && npm run build && npm start`
 behind any HTTPS reverse proxy).
