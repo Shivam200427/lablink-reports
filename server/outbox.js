@@ -1,25 +1,25 @@
-import { db, logAccess } from './db.js';
+import { get, logAccess, run, insert } from './db.js';
 import { now } from './crypto.js';
 
 // Mocked WhatsApp/SMS: messages are written to the outbox table only.
 // A ticker simulates the provider: queued -> sent -> delivered.
-export function queueMessage({ channel, toMobile, body, kind, orderId }) {
-  const info = db.prepare(
+export async function queueMessage({ channel, toMobile, body, kind, orderId }) {
+  const id = await insert(
     'INSERT INTO outbox (channel, to_mobile, body, kind, order_id) VALUES (?,?,?,?,?)'
-  ).run(channel, toMobile, body, kind, orderId ?? null);
-  logAccess('system', null, 'message_queued', 'outbox', info.lastInsertRowid, `${channel} -> ${toMobile} (${kind})`);
-  return info.lastInsertRowid;
+  , [channel, toMobile, body, kind, orderId ?? null]);
+  await logAccess('system', null, 'message_queued', 'outbox', id, `${channel} -> ${toMobile} (${kind})`);
+  return id;
 }
 
-export function tickOutbox() {
-  db.prepare(`UPDATE outbox SET status='sent', updated_at=? WHERE status='queued'`).run(now());
-  db.prepare(`UPDATE outbox SET status='delivered', updated_at=? WHERE status='sent' AND updated_at <= datetime('now','-20 seconds')`).run(now());
+export async function tickOutbox() {
+  (await run(`UPDATE outbox SET status='sent', updated_at=? WHERE status='queued'`, [now()]));
+  (await run(`UPDATE outbox SET status='delivered', updated_at=? WHERE status='sent' AND updated_at <= datetime('now','-20 seconds')`, [now()]));
 }
 
-export function resendMessage(outboxId, actor) {
-  const m = db.prepare('SELECT * FROM outbox WHERE id = ?').get(outboxId);
+export async function resendMessage(outboxId, actor) {
+  const m = (await get('SELECT * FROM outbox WHERE id = ?', [outboxId]));
   if (!m) return null;
-  db.prepare(`UPDATE outbox SET status='queued', updated_at=? WHERE id=?`).run(now(), outboxId);
-  logAccess(actor.type, actor.id, 'message_resent', 'outbox', outboxId, `${m.channel} -> ${m.to_mobile} (${m.kind})`);
-  return db.prepare('SELECT * FROM outbox WHERE id = ?').get(outboxId);
+  (await run(`UPDATE outbox SET status='queued', updated_at=? WHERE id=?`, [now(), outboxId]));
+  await logAccess(actor.type, actor.id, 'message_resent', 'outbox', outboxId, `${m.channel} -> ${m.to_mobile} (${m.kind})`);
+  return (await get('SELECT * FROM outbox WHERE id = ?', [outboxId]));
 }

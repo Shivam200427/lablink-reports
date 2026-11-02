@@ -1,4 +1,4 @@
-import { db } from './db.js';
+import { all, run } from './db.js';
 import { findKBEntry } from './kb.js';
 import { isAIEnabled, generateAISummary, validateAISummary } from './ai.js';
 
@@ -79,9 +79,9 @@ export async function buildSummaryTextsWithAI(result) {
 }
 
 export async function generateSummariesForOrder(orderId) {
-  const results = db.prepare('SELECT * FROM results WHERE order_id = ?').all(orderId);
-  const ins = db.prepare(`INSERT INTO summaries (result_id, lang_en, lang_te, lang_hi, engine, confidence)
-    VALUES (?,?,?,?,?,?) ON CONFLICT(result_id) DO NOTHING`);
+  const results = await all('SELECT * FROM results WHERE order_id = ?', [orderId]);
+  const ins = `INSERT INTO summaries (result_id, lang_en, lang_te, lang_hi, engine, confidence)
+    VALUES (?,?,?,?,?,?) ON CONFLICT(result_id) DO NOTHING`;
   let created = 0;
   // Sequential with a pause: polite to free providers, and any failure falls
   // back to the locked template for that language (never a burst of retries).
@@ -94,7 +94,7 @@ export async function generateSummariesForOrder(orderId) {
       ? buildSummaryTexts(r)
       : await buildSummaryTextsWithAI(r);
     if (!texts) continue;
-    ins.run(r.id, texts.lang_en, texts.lang_te, texts.lang_hi, texts.engine, texts.engine === 'template' ? 'high' : 'low');
+    await run(ins, [r.id, texts.lang_en, texts.lang_te, texts.lang_hi, texts.engine, texts.engine === 'template' ? 'high' : 'low']);
     created++;
     if (isAIEnabled()) await sleep(1200);
   }

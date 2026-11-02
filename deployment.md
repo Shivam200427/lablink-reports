@@ -1,10 +1,12 @@
 # LabLink - Deployment
 
-**Live demo instance:** https://lablink-reports.onrender.com (Render free tier, Singapore; sleeps when idle - first load can take ~50s; data resets to seed on restart). The steps below are exactly how it was deployed, and how to reproduce it.
+**Live demo instance:** https://lablink-reports.onrender.com (Render free tier, Singapore; sleeps when idle - first load can take ~50s; data persists on Render's free Postgres until its 2026-12-02 expiry). The steps below are exactly how it was deployed, and how to reproduce it.
 
-LabLink is a single Node.js process that serves the API and the built React client, with
-SQLite stored on disk. Any host that runs Node.js 20+ works. No external paid services are
-required: SMS/WhatsApp messages are written to a local `outbox` table (mocked).
+LabLink is a single Node.js process that serves the API and the built React client.
+Locally it stores everything in SQLite on disk; when `DATABASE_URL` is set it uses
+Postgres instead (same schema, same code path). Any host that runs Node.js 20+ works.
+No external paid services are required: SMS/WhatsApp messages are written to a local
+`outbox` table (mocked).
 
 ## 1. Run locally
 
@@ -26,7 +28,9 @@ Tests: `npm test`
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PORT` | `3000` | HTTP port |
-| `DATA_DIR` | `./data` | Where the SQLite DB and generated PDFs live |
+| `DATA_DIR` | `./data` | Where the SQLite DB (local mode) and generated PDFs live |
+| `DATABASE_URL` | _(unset)_ | Postgres connection string. Unset = SQLite mode. Set = Postgres mode |
+| `AI_REASONING_EFFORT` | _(unset)_ | Optional provider hint; `none` disables Gemini's hidden reasoning (needed for short summaries) |
 | `BASE_URL` | `http://localhost:PORT` | Public base URL used inside report links - set this to the real https URL in production |
 | `PASSWORD_SALT` | `lablink-dev-salt` | Salt for staff password hashing - set a unique random value in production |
 | `AI_API_KEY` | _(unset)_ | Key for a paid/production AI provider. Unset = free demo mode using locked templates |
@@ -49,14 +53,20 @@ Tests: `npm test`
 2. In Render: New > Web Service > connect the repo.
 3. Build command: `npm install && npm run build`
 4. Start command: `npm run seed && npm start`
-   (`seed` is idempotent for a fresh database; remove it once real data exists.)
-5. Set environment variables: `BASE_URL=https://<your-app>.onrender.com` and a random `PASSWORD_SALT`.
-6. Persistence on free tier: the free web-service filesystem is ephemeral - SQLite and
-   generated PDFs are lost on every redeploy, restart or spin-down (acceptable for this
-   demo; the seed recreates the fixture on an empty database). For durability: a
-   persistent disk (paid) mounted at the `DATA_DIR` path, or moving the DB to a managed
-   Postgres (Render's free Postgres is 1 GB, expires 30 days after creation, no card) -
-   see the limitation notes in the TDD.
+   (`seed` only seeds an EMPTY database; pass `--wipe` to force a fresh demo fixture.)
+5. Create a free Render Postgres (Singapore, 1 GB, no card) and set `DATABASE_URL`
+   to its **internal** connection string so the web service reaches it over Render's
+   private network. Free Postgres expires 30 days after creation (14-day grace
+   before deletion) - this demo's instance expires **2026-12-02** and must be
+   replaced or removed by then.
+6. Set environment variables: `BASE_URL=https://<your-app>.onrender.com`, a random
+   `PASSWORD_SALT`, and optionally the AI variables (`AI_BASE_URL`, `AI_MODEL`,
+   `AI_API_KEY`, `AI_REASONING_EFFORT`) for the Gemini free-tier configuration
+   described in the TDD.
+7. Persistence on free tier: with `DATABASE_URL` set, data survives restarts and
+   redeploys (generated PDFs are re-created on demand from stored results - the
+   ephemeral filesystem only loses the cached files). Without it, SQLite lives on
+   the ephemeral filesystem and resets to the seed on every redeploy.
 
 The same steps work on Railway, Fly.io or a small VM (`npm ci && npm run build && npm start`
 behind any HTTPS reverse proxy).

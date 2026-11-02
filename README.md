@@ -13,7 +13,7 @@ callback task for the front desk instead. One mobile number can cover a whole fa
 
 ## Stack
 
-- Node.js 22 + Express, better-sqlite3 (single-file database, no external services)
+- Node.js 22 + Express; SQLite locally, Postgres when `DATABASE_URL` is set (one async data layer)
 - React 19 + Vite + Tailwind CSS 3 (mobile-first, large text, low-end phone friendly)
 - pdfkit for report PDFs, vitest for tests
 - All messaging (WhatsApp/SMS/OTP) is mocked into an `outbox` table - no paid services

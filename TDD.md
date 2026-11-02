@@ -1,10 +1,10 @@
 # LabLink - Technical Design Document
 
 **GitHub:** https://github.com/Shivam200427/lablink-reports (public; full source + commit history)
-**Live app:** https://lablink-reports.onrender.com (free Render demo, Singapore region; sleeps when idle so the first load can take ~50s; demo data resets to seed on restart. No paid services used.)
+**Live app:** https://lablink-reports.onrender.com (free Render demo, Singapore region; sleeps when idle so the first load can take ~50s. Demo data lives on Render's free Postgres (1 GB, expires 2026-12-02, no card) and survives restarts until then; a one-command reseed resets it. No paid services used.)
 
 **Product:** secure lab-report delivery for Company A, Vijayawada ("LabLink" is a demo brand name chosen for this submission)
-**Author:** Shivam Jain, built with AI assistance (the brief encourages AI) - **Date:** 2 November 2026 - **Stack:** Node.js 22 / Express / SQLite - React 19 / Vite / Tailwind
+**Author:** Shivam Jain, built with AI assistance (the brief encourages AI) - **Date:** 2 November 2026 - **Stack:** Node.js 22 / Express / SQLite locally, Postgres on the demo host - React 19 / Vite / Tailwind
 
 ---
 
@@ -43,7 +43,7 @@ appointment booking, EMR integration beyond CSV.
 Single-process monolith, deliberately boring so a small lab can run it anywhere:
 
 ```
-LIS CSV -> Express API -> SQLite (14 tables)
+LIS CSV -> Express API -> database: SQLite locally, Postgres on the demo host (14 tables)
                 |
                 +─ sign-off -> 72h secure link + WhatsApp/SMS (mocked outbox)
                 |            + plain-language summaries en/te/hi (AI or locked template)
@@ -53,7 +53,7 @@ React SPA <─────┘  (patient portal / staff console / doctor view / o
 PDF reports: pdfkit, generated at sign-off and on demand
 ```
 
-- **Backend:** Express, better-sqlite3 (synchronous, transactional), pdfkit.
+- **Backend:** Express, one async data layer (`server/db.js`) over better-sqlite3 locally and `pg` (Postgres) when `DATABASE_URL` is set, pdfkit.
 - **Frontend:** React 19 + Vite + Tailwind, mobile-first, large tap targets and large text,
   language switcher persisted per patient.
 - **Messaging:** `server/outbox.js` writes every WhatsApp/SMS/OTP to an `outbox` table and a
@@ -104,18 +104,22 @@ serve every summary and rows are marked `engine=template`. Nothing is faked:
 each summary row stores whether it came from `ai`, `ai+template` (partial
 fallback) or `template`.
 
-**Live configuration (this demo, honest state):** the deployed app is
-configured with `AI_BASE_URL=https://text.pollinations.ai/openai`,
-`AI_MODEL=openai-fast` - a free keyless endpoint, no paid key. The AI code
-path is real and was proven end-to-end from the app's own code (a real
-validated AI sentence stored as `engine=ai+template`). On the free demo host,
-provider calls did not succeed at verification time, so every live summary
-served from the locked templates - the safety floor working exactly as
-designed, and labelled honestly: every summary row stores `engine=ai`,
-`ai+template` or `template`, visible on the staff Summary-sample page.
-Generation is sequential with spacing; fallback under throttling or provider
-failure is by design. A production deployment should use a paid, compliant
-provider (`AI_API_KEY`) - none was paid for this submission.
+**Live configuration (this demo, honest state):** the app is configured for
+Google's Gemini free tier via its OpenAI-compatible endpoint
+(`AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai`,
+`AI_MODEL=gemini-2.5-flash`, `AI_REASONING_EFFORT=none`; the request cap was
+raised to 400 output tokens and hidden reasoning disabled after observing
+truncated Telugu output at lower caps). The AI code path was proven end-to-end from the
+app's own code against the real Gemini API: real validated AI sentences,
+including Telugu, stored as `engine=ai`. A 503 "high demand" from Gemini was
+observed once and the app fell back to the locked template by design - the
+safety floor working as intended. Gemini's free tier trains on submitted
+content, so only synthetic demo data is ever sent - a real deployment needs a
+paid, compliant provider (`AI_API_KEY`), none was paid for this submission.
+The earlier keyless-endpoint configuration (pollinations.ai) was replaced:
+its provider calls never succeeded at verification time. Every summary row
+stores `engine=ai`, `ai+template` or `template`, visible on the staff
+Summary-sample page.
 
 **Safety rules, enforced in code and tested:**
 
@@ -155,7 +159,7 @@ provider (`AI_API_KEY`) - none was paid for this submission.
    `summary_reviews`) from the staff console's "Weekly AI review" page. This
    implements the brief's "a pathologist reviews 50 summaries a week".
 
-## 8. Data model (SQLite)
+## 8. Data model (SQLite locally / Postgres on the demo host)
 
 `patients` - `staff` - `doctors` - `orders` - `results` - `report_links` (hash, expiry) -
 `otps` (hash, attempts, expiry) - `sessions` (hash, scope, expiry) - `outbox` (mocked
@@ -200,7 +204,7 @@ patient, status).
 ## 11. Reliability notes
 
 - Sign-off can never be stalled by a sick AI provider: every provider call has a hard 10s timeout (AI_TIMEOUT_MS), generation stops attempting AI after a 25s per-order budget (AI_ORDER_BUDGET_MS), and the locked template is always the floor.
-- Deploy startup is deterministic: the seed never touches the network and only seeds an EMPTY database, so a service restart does not wipe data while the instance filesystem survives (free-tier recycles still start empty - see Limitations).
+- Deploy startup is deterministic: the seed never touches the network and only seeds an EMPTY database, so restarts and redeploys never wipe data. On the demo host the database is Render's free Postgres (survives restarts and redeploys; expires 2026-12-02 - see Limitations); locally it is SQLite on the instance filesystem.
 - Provider errors are logged (test name + error only, no patient data) so template fallbacks are diagnosable in host logs.
 
 ## 12. Testing
@@ -244,22 +248,27 @@ patient, status).
   every threshold.
 - **Reference ranges come from the LIS CSV**, not from this app.
 - **Demo logins and all patient data are synthetic.**
-- **Stack choice** (Node/Express/SQLite/React) was made for simplicity and
+- **Stack choice** (Node/Express/SQLite+Postgres/React) was made for simplicity and
   zero-cost hosting; any equivalent stack would fit the brief.
 
 **Limitations:**
 
-- **SQLite, not Postgres:** right for one branch and a demo; a multi-branch
-  deployment should move to Postgres (better-sqlite3 calls are isolated in
-  `server/db.js`).
+- **Database:** SQLite locally, Postgres on the demo host - one async data
+  layer (`server/db.js`) serves both. The demo uses Render's free Postgres
+  (1 GB, Singapore, no card) which **expires 2026-12-02** (30 days after
+  creation, 14-day grace period before deletion). Before that date the demo
+  must be re-pointed at a fresh database or back to SQLite, or the service
+  starts failing. Real/multi-branch use needs a paid, managed Postgres.
 - **Mocked messaging:** no real SMS/WhatsApp leaves the box (submission budget:
   no paid services). The outbox proves the full pipeline; a provider plugs into
   `server/outbox.js`. OTPs are read from the server log/outbox in the demo.
-- **AI provider:** the demo runs free on locked templates by default and was
-  also proven against a keyless free endpoint (`AI_BASE_URL`) with a real,
-  validated AI sentence stored; under the free endpoint's throttling the
-  fallback took over, by design. Production should use a paid, compliant
-  provider via `AI_API_KEY` - no provider was paid for this submission.
+- **AI provider:** the demo is configured for Google's Gemini free tier and
+  the full AI path was proven end-to-end against the real API (validated
+  `engine=ai` sentences, including Telugu). Gemini's free tier trains on
+  submitted content, so only synthetic demo data is sent; a transient 503
+  was observed and the locked template took over, by design. Production
+  should use a paid, compliant provider via `AI_API_KEY` - no provider was
+  paid for this submission.
 - **India data residency:** the demo host options in deployment.md are free
   tiers outside India. A real deployment for Indian patient data should use an
   India-region host (e.g. AWS Mumbai / Azure Central India); this submission

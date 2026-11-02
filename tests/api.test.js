@@ -190,8 +190,8 @@ describe('staff console', () => {
 });
 
 describe('csv import flags', () => {
-  it('imports and flags rows', () => {
-    const r = importCSV('Order ID,Patient,Mobile,Parameter,Result,Reference Range,Status,Referring Doctor\nORD-T3,Flags Case,9800000008,LDL Cholesterol,142,0-100,Processing,Dr. Test\nORD-T3,Flags Case,9800000008,Potassium,6.8,3.5-5.1,Processing,Dr. Test\n');
+  it('imports and flags rows', async () => {
+    const r = await importCSV('Order ID,Patient,Mobile,Parameter,Result,Reference Range,Status,Referring Doctor\nORD-T3,Flags Case,9800000008,LDL Cholesterol,142,0-100,Processing,Dr. Test\nORD-T3,Flags Case,9800000008,Potassium,6.8,3.5-5.1,Processing,Dr. Test\n');
     expect(r.newOrders).toBe(1);
     const flags = db.prepare(`SELECT flag FROM results r JOIN orders o ON o.id=r.order_id WHERE o.order_code='ORD-T3' ORDER BY r.id`).all().map(x => x.flag);
     expect(flags).toEqual(['high', 'critical']);
