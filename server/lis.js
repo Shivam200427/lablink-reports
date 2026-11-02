@@ -36,36 +36,43 @@ export async function importCSV(text, actor = { type: 'staff', id: null }) {
       }
       report.ordersTouched.add(orderCode);
 
-      // Identity linkage: OTP proves phone possession, not identity, so a
-      // self-registered patient only merges with lab data when the LIS export
-      // asserts the SAME mobile + name (that pairing already requires holding
-      // the phone). Name-only rows (exports without a mobile) may attach to
-      // lab-created patients only - never to a self-asserted identity.
+      // Identity linkage: an import NEVER grants access and never merges
+      // identities. Rows attach to lab-created records only (mobile+name, or
+      // name-only with exactly one lab match). A row whose mobile+name matches
+      // a SELF-REGISTERED account attaches to a lab-created record and raises
+      // a pending merge (patient_merges): the lab's data and the person's
+      // account stay separate until staff attest the identity match.
       // Name-only rows must never guess between same-named lab patients:
       // an ambiguous name holds the row with a staff-facing error asking for
       // a Mobile column, instead of silently attaching to the first match.
       let patient;
       if (mobile) {
-        patient = (await get("SELECT * FROM patients WHERE mobile=? AND lower(trim(full_name))=lower(trim(?)) ORDER BY (created_via='lis') DESC LIMIT 1", [mobile, patientName]));
+        patient = (await get("SELECT * FROM patients WHERE created_via='lis' AND merged_into IS NULL AND mobile=? AND lower(trim(full_name))=lower(trim(?)) ORDER BY id LIMIT 1", [mobile, patientName]));
       } else {
-        const named = (await all("SELECT * FROM patients WHERE created_via='lis' AND lower(trim(full_name))=lower(trim(?))", [patientName]));
+        const named = (await all("SELECT * FROM patients WHERE created_via='lis' AND merged_into IS NULL AND lower(trim(full_name))=lower(trim(?))", [patientName]));
         if (named.length > 1) {
           report.errors.push(`row ${i + 2}: ambiguous patient name '${patientName}' (${named.length} lab records share it) - row held; include Mobile in the export to identify the patient`);
           continue;
         }
         patient = named[0];
       }
-      if (patient && patient.created_via === 'self') {
-        // the lab's LIS now vouches for this mobile+name pairing: the
-        // self-registered record becomes lab-verified
-        (await run("UPDATE patients SET created_via='lis' WHERE id=?", [patient.id]));
-        patient.created_via = 'lis';
-        await logAccess(actor.type, actor.id, 'patient_merged', 'patient', patient.id, `self-registered ${patientName} confirmed by LIS import`);
-      }
       if (!patient) {
         const pid = await insert('INSERT INTO patients (full_name, age, sex, mobile) VALUES (?,?,?,?)', [patientName, age, sex, mobile || `unknown-${patientName}`]);
         patient = (await get('SELECT * FROM patients WHERE id=?', [pid]));
         report.newPatients++;
+      }
+      if (mobile) {
+        // Possible identity match with a self-registered account? Record it for
+        // staff attestation; nothing is attached to that account by the import.
+        const selfP = (await get("SELECT id FROM patients WHERE created_via='self' AND merged_into IS NULL AND mobile=? AND lower(trim(full_name))=lower(trim(?))", [mobile, patientName]));
+        if (selfP && selfP.id !== patient.id) {
+          const pending = (await get("SELECT 1 AS x FROM patient_merges WHERE lab_patient_id=? AND self_patient_id=? AND status='pending'", [patient.id, selfP.id]));
+          if (!pending) {
+            await insert('INSERT INTO patient_merges (lab_patient_id, self_patient_id) VALUES (?,?)', [patient.id, selfP.id]);
+            await logAccess(actor.type, actor.id, 'merge_pending', 'patient', patient.id, `possible identity match with self-registered account #${selfP.id}`);
+            report.pendingMerges = (report.pendingMerges || 0) + 1;
+          }
+        }
       }
       let doctor = null;
       if (doctorName) {

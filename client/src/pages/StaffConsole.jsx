@@ -31,8 +31,23 @@ export default function StaffConsole() {
     if (r.ok) open(patientId);
   }
   const [msg, setMsg] = React.useState('');
+  const [merges, setMerges] = React.useState([]);
 
   React.useEffect(() => { (async () => { const r = await api('/api/staff/me'); if (!r.ok) nav('/staff'); })(); }, []);
+  React.useEffect(() => { loadMerges(); }, []);
+
+  async function loadMerges() {
+    const r = await api('/api/staff/merges');
+    if (r.ok) setMerges(r.data.merges);
+  }
+  async function resolveMerge(id, action) {
+    const r = await api(`/api/staff/merges/${id}/${action}`, { method: 'POST', body: {} });
+    if (r.ok) { loadMerges(); setMsg(action === 'confirm' ? 'Identity confirmed - the lab reports now show in the patient\'s account.' : 'Kept as separate patients.'); }
+  }
+  async function verifyContact(patientId) {
+    const r = await api(`/api/staff/patients/${patientId}/verify-contact`, { method: 'POST', body: { attested: true } });
+    if (r.ok) { setMsg('Contact number verified - the patient can now log in with OTP on it.'); open(patientId); }
+  }
 
   async function search(e) {
     e?.preventDefault();
@@ -63,6 +78,28 @@ export default function StaffConsole() {
         <button className="btn whitespace-nowrap px-4 text-base">Search</button>
       </form>
       {msg && <p className="mb-3 rounded-lg bg-brand-50 px-4 py-2 text-base text-brand-800">{msg}</p>}
+      {!detail && merges.length > 0 && (
+        <div className="card mb-4">
+          <h3 className="mb-1 text-lg font-bold text-slate-900">Identity matches to confirm</h3>
+          <p className="mb-3 text-sm text-slate-500">
+            These lab records have the same name and number as a self-registered account.
+            Reports stay separate until the lab confirms the person at the desk.
+          </p>
+          <div className="space-y-2">
+            {merges.map((m) => (
+              <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2">
+                <div className="text-sm text-slate-700">
+                  <span className="font-medium">{m.lab_name}</span> (lab record) = <span className="font-medium">{m.self_name}</span> (self-registered, {m.self_mobile})?
+                </div>
+                <div className="flex gap-2">
+                  <button className="btn px-3 py-1 text-sm" onClick={() => resolveMerge(m.id, 'confirm')}>Same person</button>
+                  <button className="btn-ghost px-3 py-1 text-sm" onClick={() => resolveMerge(m.id, 'reject')}>Different people</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {!detail && (
         <div className="space-y-2">
           {results.map((p) => (
@@ -84,21 +121,35 @@ export default function StaffConsole() {
             <div className="text-base text-slate-500">{detail.patient.age}/{detail.patient.sex} · {detail.patient.mobile}</div>
           </div>
           <div className="card">
-            <h3 className="mb-1 text-lg font-bold text-slate-900">Family access</h3>
+            <h3 className="mb-1 text-lg font-bold text-slate-900">Report access</h3>
             <p className="mb-3 text-sm text-slate-500">
-              Who may see this patient's reports after mobile OTP. The registered contact
-              number ({detail.patient.mobile}) was verified by the lab at registration.
-              Grant access to a relative's number below - every grant and revoke is logged.
+              Only numbers listed here can see this patient's reports after mobile OTP.
+              Nothing is granted by phone possession alone - every entry is a lab
+              attestation or an OTP-verified self-registration, and all are logged.
             </p>
+            {!detail.contactVerified && (
+              <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <p className="mb-2 text-sm text-slate-700">
+                  The contact number {detail.patient.mobile} is <span className="font-semibold">not verified</span>, so this
+                  patient cannot log in yet. Verify it only with the patient at the desk.
+                </p>
+                <button className="btn px-3 py-1 text-sm" onClick={() => verifyContact(detail.patient.id)}>I verified this contact number</button>
+              </div>
+            )}
             <div className="mb-3 space-y-2">
-              {(detail.familyAccess || []).length === 0 && <p className="text-sm text-slate-500">No relatives have access.</p>}
+              {(detail.familyAccess || []).length === 0 && <p className="text-sm text-slate-500">No number has access yet.</p>}
               {(detail.familyAccess || []).map((g) => (
                 <div key={g.id} className="flex items-center justify-between rounded-xl border border-slate-100 px-4 py-2">
                   <div className="text-sm text-slate-700">
-                    <span className="font-medium">{g.mobile}</span>{g.relation ? ` · ${g.relation}` : ''}
-                    <span className="text-slate-400"> · by {g.granted_by_name} · {(g.created_at || '').slice(0, 10)}</span>
+                    <span className="font-medium">{g.mobile}</span>
+                    {g.kind === 'contact' && <span className="text-slate-400"> · registered contact · verified by {g.granted_by_name}</span>}
+                    {g.kind === 'self' && <span className="text-slate-400"> · self-registered (OTP verified)</span>}
+                    {(!g.kind || g.kind === 'delegated') && <span className="text-slate-400">{g.relation ? ` · ${g.relation}` : ''} · granted by {g.granted_by_name}</span>}
+                    <span className="text-slate-400"> · {(g.created_at || '').slice(0, 10)}</span>
                   </div>
-                  <button className="text-sm font-medium text-red-600 underline" onClick={() => revokeAccess(detail.patient.id, g.id)}>Revoke</button>
+                  {(!g.kind || g.kind === 'delegated') && (
+                    <button className="text-sm font-medium text-red-600 underline" onClick={() => revokeAccess(detail.patient.id, g.id)}>Revoke</button>
+                  )}
                 </div>
               ))}
             </div>

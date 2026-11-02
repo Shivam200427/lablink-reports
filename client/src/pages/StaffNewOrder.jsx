@@ -14,6 +14,7 @@ export default function StaffNewOrder() {
   const [sex, setSex] = React.useState('');
   const [doctorName, setDoctorName] = React.useState('');
   const [rows, setRows] = React.useState([emptyResult()]);
+  const [attested, setAttested] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [done, setDone] = React.useState(null);
   const [err, setErr] = React.useState('');
@@ -21,14 +22,14 @@ export default function StaffNewOrder() {
   React.useEffect(() => { (async () => { const r = await api('/api/staff/me'); if (!r.ok) nav('/staff'); })(); }, []);
 
   const setRow = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
-  const valid = patientName.trim().length >= 2 && mobile.length === 10
+  const valid = patientName.trim().length >= 2 && mobile.length === 10 && attested
     && rows.every((r) => r.parameter.trim().length >= 2 && r.value.trim().length > 0);
 
   async function submit(e) {
     e.preventDefault(); setBusy(true); setErr('');
-    const r = await api('/api/staff/orders', { method: 'POST', body: { patientName, mobile, age: age || undefined, sex: sex || undefined, doctorName: doctorName || undefined, results: rows } });
+    const r = await api('/api/staff/orders', { method: 'POST', body: { patientName, mobile, age: age || undefined, sex: sex || undefined, doctorName: doctorName || undefined, contactVerified: attested, results: rows } });
     setBusy(false);
-    if (!r.ok) return setErr(r.data?.error === 'invalid_mobile' ? 'Enter a valid 10-digit mobile number.' : r.data?.error === 'invalid_result' ? 'Every test row needs a parameter and a result value.' : 'Could not create the order. Check the entries and try again.');
+    if (!r.ok) return setErr(r.data?.error === 'contact_attestation_required' ? 'Tick the identity and contact verification box first - the lab attests this before the patient can log in.' : r.data?.error === 'invalid_mobile' ? 'Enter a valid 10-digit mobile number.' : r.data?.error === 'invalid_result' ? 'Every test row needs a parameter and a result value.' : 'Could not create the order. Check the entries and try again.');
     setDone(r.data);
   }
 
@@ -40,7 +41,7 @@ export default function StaffNewOrder() {
         <div className="mb-2 text-2xl font-bold text-brand-700">Order {done.orderCode} created</div>
         <p className="mb-4 text-lg text-slate-600">It is waiting for the pathologist's review. After sign-off the patient gets the secure report link automatically.</p>
         <a href="/staff/import" className="btn inline-block">Go to sign-off</a>
-        <button className="btn-ghost ml-2" onClick={() => { setDone(null); setRows([emptyResult()]); setPatientName(''); setMobile(''); setAge(''); setSex(''); setDoctorName(''); }}>New entry</button>
+        <button className="btn-ghost ml-2" onClick={() => { setDone(null); setRows([emptyResult()]); setPatientName(''); setMobile(''); setAge(''); setSex(''); setDoctorName(''); setAttested(false); }}>New entry</button>
       </div>
     </div>
   );
@@ -95,6 +96,10 @@ export default function StaffNewOrder() {
             </div>
           ))}
           <button type="button" className="btn-ghost mb-4" onClick={() => setRows([...rows, emptyResult()])}>+ Add another test</button>
+          <label className="mb-4 flex items-start gap-3 rounded-xl border border-brand-100 bg-brand-50 p-3">
+            <input type="checkbox" className="mt-1 h-5 w-5" checked={attested} onChange={(e) => setAttested(e.target.checked)} />
+            <span className="text-sm text-slate-700">I have verified this patient's identity and this contact number at the desk. The lab is responsible for this attestation - it is what lets the patient log in with OTP on this number.</span>
+          </label>
           {err && <p className="mb-3 text-base text-red-600">{err}</p>}
           <button className="btn w-full" disabled={busy || !valid}>{busy ? 'Saving...' : 'Create order'}</button>
         </form>

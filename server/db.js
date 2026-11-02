@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS patients (
   mobile TEXT NOT NULL,
   preferred_language TEXT NOT NULL DEFAULT 'en' CHECK (preferred_language IN ('en','te','hi')),
   created_via TEXT NOT NULL DEFAULT 'lis' CHECK (created_via IN ('lis','self')),
+  merged_into INTEGER REFERENCES patients(id),
   consent_given_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -123,20 +124,38 @@ CREATE TABLE IF NOT EXISTS outbox (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Lab-verified family access: beyond a patient's own lab-recorded contact
--- mobile (asserted at registration/walk-in), the front desk can delegate
--- report access to a relative's mobile. Every grant/revoke is staff-attributed
--- and audit-logged. A login sees exactly: patients whose contact mobile is
--- the login mobile, plus patients with an active delegation to it.
+-- Grant-based authorization: an active row here is the ONLY way a login
+-- mobile may see a patient. patients.mobile is message-routing data, never
+-- authorization. Three grant kinds:
+--   self      - created at OTP-verified self-registration (granted_by NULL:
+--               no staff involved; the OTP event is the attestation)
+--   contact   - a staff member attested the patient's contact number at the
+--               front desk (walk-in entry or "verify contact")
+--   delegated - the front desk granted a relative's mobile access
 CREATE TABLE IF NOT EXISTS patient_access (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   patient_id INTEGER NOT NULL REFERENCES patients(id),
   mobile TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'delegated' CHECK (kind IN ('self','contact','delegated')),
   relation TEXT,
-  granted_by INTEGER NOT NULL REFERENCES staff(id),
+  granted_by INTEGER REFERENCES staff(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   revoked_at TEXT,
   revoked_by INTEGER REFERENCES staff(id)
+);
+
+-- Possible identity matches between a lab-created record and a self-registered
+-- account with the same mobile+name. The LIS import NEVER merges them on its
+-- own; a staff member must confirm the match (identity attestation) before
+-- any lab report becomes visible to the self-registered login.
+CREATE TABLE IF NOT EXISTS patient_merges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  lab_patient_id INTEGER NOT NULL REFERENCES patients(id),
+  self_patient_id INTEGER NOT NULL REFERENCES patients(id),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','confirmed','rejected')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  resolved_at TEXT,
+  resolved_by INTEGER REFERENCES staff(id)
 );
 
 CREATE TABLE IF NOT EXISTS sms_budget (
@@ -221,6 +240,9 @@ export async function initDB() {
     await pool.query(DDL_PG);
     // migration for databases created before created_via existed
     await pool.query("ALTER TABLE patients ADD COLUMN IF NOT EXISTS created_via TEXT NOT NULL DEFAULT 'lis'");
+    await pool.query("ALTER TABLE patients ADD COLUMN IF NOT EXISTS merged_into INTEGER REFERENCES patients(id)");
+    await pool.query("ALTER TABLE patient_access ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'delegated'");
+    await pool.query("ALTER TABLE patient_access ALTER COLUMN granted_by DROP NOT NULL");
     await pool.query("ALTER TABLE outbox ADD COLUMN IF NOT EXISTS provider TEXT");
     await pool.query("ALTER TABLE outbox ADD COLUMN IF NOT EXISTS provider_status TEXT");
     // seed the real-send budget counter from any pre-migration claims so an
@@ -236,6 +258,29 @@ export async function initDB() {
     sdb.exec(DDL);
     try { sdb.exec("ALTER TABLE patients ADD COLUMN created_via TEXT NOT NULL DEFAULT 'lis'"); }
     catch (e) { if (!/duplicate column/i.test(e.message)) throw e; }
+    try { sdb.exec("ALTER TABLE patients ADD COLUMN merged_into INTEGER REFERENCES patients(id)"); }
+    catch (e) { if (!/duplicate column/i.test(e.message)) throw e; }
+    // patient_access gained `kind` and a nullable granted_by: rebuild once
+    const paCols = sdb.prepare('PRAGMA table_info(patient_access)').all();
+    if (paCols.length && !paCols.some((c) => c.name === 'kind')) {
+      sdb.exec(`BEGIN;
+        CREATE TABLE patient_access_v2 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          patient_id INTEGER NOT NULL REFERENCES patients(id),
+          mobile TEXT NOT NULL,
+          kind TEXT NOT NULL DEFAULT 'delegated' CHECK (kind IN ('self','contact','delegated')),
+          relation TEXT,
+          granted_by INTEGER REFERENCES staff(id),
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          revoked_at TEXT,
+          revoked_by INTEGER REFERENCES staff(id)
+        );
+        INSERT INTO patient_access_v2 (id, patient_id, mobile, relation, granted_by, created_at, revoked_at, revoked_by)
+          SELECT id, patient_id, mobile, relation, granted_by, created_at, revoked_at, revoked_by FROM patient_access;
+        DROP TABLE patient_access;
+        ALTER TABLE patient_access_v2 RENAME TO patient_access;
+      COMMIT;`);
+    }
     sdb.exec(`INSERT INTO sms_budget (id, used)
       SELECT 1, (SELECT COUNT(*) FROM sms_real_claims)
       WHERE NOT EXISTS (SELECT 1 FROM sms_budget WHERE id=1)`);
@@ -244,6 +289,26 @@ export async function initDB() {
       catch (e) { if (!/duplicate column/i.test(e.message)) throw e; }
     }
     db = sdb;
+  }
+
+  // One-time migration for databases that predate grant-based authorization:
+  // pre-existing lab-registered patients receive a staff-attributed 'contact'
+  // grant and pre-existing self-registered accounts their 'self' grant, so the
+  // demo keeps working. Patients and imports created AFTER this policy get no
+  // grants from here. An access_log marker makes it run exactly once.
+  const backfilled = await get("SELECT 1 AS x FROM access_log WHERE action='grants_backfilled' LIMIT 1");
+  const anyStaff = await get('SELECT id FROM staff ORDER BY id LIMIT 1');
+  if (!backfilled && anyStaff) {
+    await run(`INSERT INTO patient_access (patient_id, mobile, kind, granted_by)
+      SELECT p.id, p.mobile, 'contact', ? FROM patients p
+      WHERE p.created_via='lis' AND p.merged_into IS NULL AND p.mobile NOT LIKE 'unknown-%'
+      AND NOT EXISTS (SELECT 1 FROM patient_access pa WHERE pa.patient_id=p.id AND pa.mobile=p.mobile AND pa.revoked_at IS NULL)`, [anyStaff.id]);
+    await run(`INSERT INTO patient_access (patient_id, mobile, kind, granted_by)
+      SELECT p.id, p.mobile, 'self', NULL FROM patients p
+      WHERE p.created_via='self' AND p.merged_into IS NULL AND p.mobile NOT LIKE 'unknown-%'
+      AND NOT EXISTS (SELECT 1 FROM patient_access pa WHERE pa.patient_id=p.id AND pa.mobile=p.mobile AND pa.revoked_at IS NULL)`);
+    await logAccess('system', null, 'grants_backfilled', null, null,
+      'one-time migration: pre-existing patients received contact/self grants');
   }
 }
 

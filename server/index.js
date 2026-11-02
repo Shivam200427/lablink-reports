@@ -54,14 +54,29 @@ const setSessionCookie = (res, token) =>
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // ---------- patient auth ----------
-// Which patients a login mobile may see: lab-asserted contact mobile
-// (patients.mobile) plus active lab-granted delegations (patient_access).
+// Which patients a login mobile may see: exactly the patients with an ACTIVE
+// GRANT for that mobile (patient_access). Holding the phone is never enough on
+// its own - a grant exists only after OTP-verified self-registration ('self'),
+// a staff contact attestation ('contact'), or a staff delegation ('delegated').
 async function authorizedPatientIds(mobile) {
   const rows = (await all(
-    `SELECT id FROM patients WHERE mobile=?
-     UNION
-     SELECT patient_id AS id FROM patient_access WHERE mobile=? AND revoked_at IS NULL`, [mobile, mobile]));
+    `SELECT patient_id AS id FROM patient_access WHERE mobile=? AND revoked_at IS NULL`, [mobile]));
   return rows.map((r) => r.id);
+}
+
+// After a successful OTP, every self-registered record on this mobile holds a
+// 'self' grant. The grant is created at verified possession, not at
+// registration form submission, and only ever attaches to the account's OWN
+// empty record - lab reports reach it only via staff identity attestation.
+async function ensureSelfGrants(mobile) {
+  const selfRows = (await all("SELECT id FROM patients WHERE mobile=? AND created_via='self' AND merged_into IS NULL", [mobile]));
+  for (const p of selfRows) {
+    const has = (await get('SELECT 1 AS x FROM patient_access WHERE patient_id=? AND mobile=? AND revoked_at IS NULL', [p.id, mobile]));
+    if (!has) {
+      await insert("INSERT INTO patient_access (patient_id, mobile, kind, relation, granted_by) VALUES (?,?,'self',NULL,NULL)", [p.id, mobile]);
+      await logAccess('patient', p.id, 'self_grant_created', 'patient', p.id, mask(mobile));
+    }
+  }
 }
 
 app.post('/api/auth/patient/request-otp', async (req, res) => {
@@ -78,13 +93,13 @@ app.post('/api/auth/patient/request-otp', async (req, res) => {
 });
 
 // Self-registration for patients whose number is not yet known. Creates an
-// EMPTY patient record - no reports are attached at registration. Reports only
-// ever arrive via the lab's own LIS CSV import. Import linkage is
-// provenance-aware (see lis.js): mobile+name rows may converge with a
-// self-registered record (holding that phone was OTP-verified), but name-only
-// rows attach to lab-created patients only - a self-asserted name alone can
-// never pull in someone else's report. Numbers already known (registered at a
-// lab/collection centre) are told to log in instead.
+// EMPTY patient record - no reports are attached at registration, and no grant
+// exists until the first successful OTP verify (see ensureSelfGrants). Lab
+// reports reach the account ONLY through staff identity attestation: a
+// confirmed merge (patient_merges) or a front-desk walk-in entry. A LIS import
+// never converges with a self-registered record on its own (see lis.js).
+// Numbers already known (registered at a lab/collection centre) are told to
+// log in instead.
 app.post('/api/auth/patient/register', async (req, res) => {
   const mobile = String(req.body.mobile || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
   const fullName = String(req.body.fullName || '').trim();
@@ -109,6 +124,7 @@ app.post('/api/auth/patient/verify', async (req, res) => {
   const mobile = String(req.body.mobile || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
   const v = await verifyOTP(mobile, String(req.body.code || ''), 'login', { consume: req.body.consent === true });
   if (v.error) return res.status(400).json(v);
+  await ensureSelfGrants(mobile);
   const ids = await authorizedPatientIds(mobile);
   const patients = ids.length
     ? (await all(`SELECT id, full_name, age, sex, preferred_language, consent_given_at FROM patients WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY id`, ids))
@@ -334,12 +350,62 @@ app.get('/api/staff/patients/:id', requireRole('staff'), async (req, res) => {
     `SELECT * FROM access_log WHERE (entity='order' AND entity_id IN (SELECT id FROM orders WHERE patient_id=?))
      OR (entity='mobile' AND detail LIKE ?) ORDER BY id DESC LIMIT 50`, [p.id, `%${mask(p.mobile)}%`]));
   const familyAccess = (await all(
-    `SELECT pa.id, pa.mobile, pa.relation, pa.created_at, s.full_name granted_by_name
-     FROM patient_access pa JOIN staff s ON s.id=pa.granted_by
+    `SELECT pa.id, pa.mobile, pa.kind, pa.relation, pa.created_at, s.full_name granted_by_name
+     FROM patient_access pa LEFT JOIN staff s ON s.id=pa.granted_by
      WHERE pa.patient_id=? AND pa.revoked_at IS NULL ORDER BY pa.id DESC`, [p.id]));
+  const contactVerified = !!(await get(
+    `SELECT 1 AS x FROM patient_access WHERE patient_id=? AND mobile=? AND kind IN ('contact','self') AND revoked_at IS NULL`, [p.id, p.mobile]));
   await logAccess('staff', req.actor.id, 'patient_lookup', 'patient', p.id, p.full_name);
   res.json({ patient: { ...p, mobile: mask(p.mobile) }, orders, messages, access,
+    contactVerified,
     familyAccess: familyAccess.map((g) => ({ ...g, mobile: mask(g.mobile) })) });
+});
+
+// Front-desk contact attestation for a lab-created patient: the ONLY way a
+// lab/imported record becomes reachable by its contact mobile. Without it the
+// patient exists for messaging but cannot log in - phone possession alone
+// grants nothing.
+app.post('/api/staff/patients/:id/verify-contact', requireRole('staff'), async (req, res) => {
+  if (req.body?.attested !== true) return res.status(400).json({ error: 'attestation_required' });
+  const p = (await get('SELECT * FROM patients WHERE id=?', [req.params.id]));
+  if (!p) return res.status(404).json({ error: 'not_found' });
+  if (String(p.mobile).startsWith('unknown-')) return res.status(400).json({ error: 'no_mobile' });
+  const existing = (await get(`SELECT 1 AS x FROM patient_access WHERE patient_id=? AND mobile=? AND kind IN ('contact','self') AND revoked_at IS NULL`, [p.id, p.mobile]));
+  if (existing) return res.status(409).json({ error: 'already_verified' });
+  await insert("INSERT INTO patient_access (patient_id, mobile, kind, granted_by) VALUES (?,?,'contact',?)", [p.id, p.mobile, req.actor.id]);
+  await logAccess('staff', req.actor.id, 'contact_verified', 'patient', p.id, mask(p.mobile));
+  res.json({ ok: true });
+});
+
+// Pending identity matches raised by LIS imports (lab record vs self-registered
+// account with the same mobile+name). Nothing attaches until staff confirm.
+app.get('/api/staff/merges', requireRole('staff'), async (req, res) => {
+  const rows = (await all(
+    `SELECT m.id, m.status, m.created_at,
+            lp.full_name lab_name, lp.mobile lab_mobile, lp.created_via lab_via,
+            sp.full_name self_name, sp.mobile self_mobile
+     FROM patient_merges m
+     JOIN patients lp ON lp.id=m.lab_patient_id JOIN patients sp ON sp.id=m.self_patient_id
+     WHERE m.status='pending' ORDER BY m.id DESC`, []));
+  res.json({ merges: rows.map((r) => ({ ...r, lab_mobile: mask(r.lab_mobile), self_mobile: mask(r.self_mobile) })) });
+});
+
+app.post('/api/staff/merges/:id/confirm', requireRole('staff'), async (req, res) => {
+  const m = (await get("SELECT * FROM patient_merges WHERE id=? AND status='pending'", [req.params.id]));
+  if (!m) return res.status(404).json({ error: 'not_found' });
+  (await run('UPDATE orders SET patient_id=? WHERE patient_id=?', [m.self_patient_id, m.lab_patient_id]));
+  (await run('UPDATE patients SET merged_into=? WHERE id=?', [m.self_patient_id, m.lab_patient_id]));
+  (await run("UPDATE patient_merges SET status='confirmed', resolved_at=?, resolved_by=? WHERE id=?", [now(), req.actor.id, m.id]));
+  await logAccess('staff', req.actor.id, 'patient_merge_confirmed', 'patient', m.self_patient_id, `lab record #${m.lab_patient_id} merged after identity attestation`);
+  res.json({ ok: true });
+});
+
+app.post('/api/staff/merges/:id/reject', requireRole('staff'), async (req, res) => {
+  const m = (await get("SELECT * FROM patient_merges WHERE id=? AND status='pending'", [req.params.id]));
+  if (!m) return res.status(404).json({ error: 'not_found' });
+  (await run("UPDATE patient_merges SET status='rejected', resolved_at=?, resolved_by=? WHERE id=?", [now(), req.actor.id, m.id]));
+  await logAccess('staff', req.actor.id, 'patient_merge_rejected', 'patient', m.lab_patient_id, `kept separate from self-registered #${m.self_patient_id}`);
+  res.json({ ok: true });
 });
 
 // Lab-verified delegation: front desk grants a relative's mobile access to
@@ -353,7 +419,7 @@ app.post('/api/staff/patients/:id/access', requireRole('staff'), async (req, res
   const relation = String(req.body.relation || '').trim().slice(0, 40) || null;
   const existing = (await get('SELECT * FROM patient_access WHERE patient_id=? AND mobile=? AND revoked_at IS NULL', [p.id, mobile]));
   if (existing) return res.status(409).json({ error: 'already_granted' });
-  const id = await insert('INSERT INTO patient_access (patient_id, mobile, relation, granted_by) VALUES (?,?,?,?)', [p.id, mobile, relation, req.actor.id]);
+  const id = await insert("INSERT INTO patient_access (patient_id, mobile, kind, relation, granted_by) VALUES (?,?,'delegated',?,?)", [p.id, mobile, relation, req.actor.id]);
   await logAccess('staff', req.actor.id, 'family_access_grant', 'patient', p.id, `${mask(mobile)}${relation ? ' (' + relation + ')' : ''}`);
   res.json({ ok: true, id });
 });
@@ -392,10 +458,14 @@ app.post('/api/staff/import', requireRole('staff'), upload.single('file'), async
 });
 
 // Manual front-desk entry: register a walk-in patient + order without the LIS
-// CSV (same identity semantics as the import - staff entry is lab-asserted).
-// The order lands in processing; the pathologist reviews and signs as usual.
+// CSV. Staff see the person at the desk, so this endpoint is the lab's identity
+// attestation event - it REQUIRES contactVerified:true, and that attestation is
+// what creates the 'contact' grant that later lets the patient log in.
+// Without the attestation the entry is refused (400). The order lands in
+// processing; the pathologist reviews and signs as usual.
 app.post('/api/staff/orders', requireRole('staff'), async (req, res) => {
   const b = req.body || {};
+  if (b.contactVerified !== true) return res.status(400).json({ error: 'contact_attestation_required' });
   const fullName = String(b.patientName || '').trim();
   const mobile = String(b.mobile || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
   const doctorName = String(b.doctorName || '').trim();
@@ -412,15 +482,22 @@ app.post('/api/staff/orders', requireRole('staff'), async (req, res) => {
     const v = String(r?.value ?? '').trim();
     if (p.length < 2 || p.length > 80 || !v || v.length > 40) return res.status(400).json({ error: 'invalid_result' });
   }
-  let patient = (await get("SELECT * FROM patients WHERE mobile=? AND lower(trim(full_name))=lower(trim(?)) ORDER BY (created_via='lis') DESC LIMIT 1", [mobile, fullName]));
+  // Prefer the person's own self-registered account when it matches (staff
+  // attestation covers it); otherwise reuse a lab record; otherwise create one.
+  let patient = (await get("SELECT * FROM patients WHERE mobile=? AND lower(trim(full_name))=lower(trim(?)) AND merged_into IS NULL ORDER BY (created_via='self') DESC LIMIT 1", [mobile, fullName]));
   if (patient && patient.created_via === 'self') {
-    (await run("UPDATE patients SET created_via='lis' WHERE id=?", [patient.id]));
-    await logAccess('staff', req.actor.id, 'patient_merged', 'patient', patient.id, `self-registered ${fullName} confirmed by front-desk entry`);
+    await logAccess('staff', req.actor.id, 'patient_identity_attested', 'patient', patient.id, `self-registered ${fullName} attested at front desk`);
   }
   if (!patient) {
     const pid = await insert('INSERT INTO patients (full_name, age, sex, mobile) VALUES (?,?,?,?)', [fullName, age, sex, mobile]);
     patient = (await get('SELECT * FROM patients WHERE id=?', [pid]));
   }
+  // The staff attestation creates the contact grant that authorizes login.
+  const hasGrant = (await get('SELECT 1 AS x FROM patient_access WHERE patient_id=? AND mobile=? AND revoked_at IS NULL', [patient.id, mobile]));
+  if (!hasGrant) {
+    await insert("INSERT INTO patient_access (patient_id, mobile, kind, granted_by) VALUES (?,?,'contact',?)", [patient.id, mobile, req.actor.id]);
+  }
+  await logAccess('staff', req.actor.id, 'contact_attested', 'patient', patient.id, mask(mobile));
   let doctorId = null;
   if (doctorName) {
     let d = (await get('SELECT * FROM doctors WHERE full_name=?', [doctorName]));

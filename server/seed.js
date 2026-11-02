@@ -4,7 +4,7 @@
 process.env.AI_OFF = '1';
 
 // Seed with realistic SYNTHETIC sample data only. No real patients.
-import { initDB, get, run, insert } from './db.js';
+import { initDB, get, run, insert, logAccess } from './db.js';
 import { hashPassword } from './crypto.js';
 import { flagResult } from './flags.js';
 import { findKBEntry } from './kb.js';
@@ -60,7 +60,7 @@ async function main() {
     return;
   }
   if (forceWipe) {
-    for (const t of ['summary_flags','summaries','callback_tasks','access_log','outbox','sessions','otps','report_links','results','orders','doctors','staff','patients'])
+    for (const t of ['summary_flags','summaries','callback_tasks','access_log','outbox','sessions','otps','report_links','results','orders','patient_merges','patient_access','doctors','staff','patients'])
       await run(`DELETE FROM ${t}`);
   }
 
@@ -85,6 +85,19 @@ async function main() {
   await run(insStaff, ['frontdesk', hashPassword('Lab@2026'), 'K. Bhavani', 'frontdesk']);
   await run(insStaff, ['ops', hashPassword('Ops@2026'), 'G. Prasad (Operations Head)', 'ops']);
   await run(insStaff, ['patho', hashPassword('Patho@2026'), 'Dr. M. Vidyasagar (Pathologist)', 'pathologist']);
+
+  // Fixture grants: seeded patients stand in for lab-registered patients whose
+  // contact numbers were verified when the lab registered them, so each holds
+  // a 'contact' grant attributed to the front desk. Records created AFTER the
+  // grant policy (imports, unverified walk-ins) get no automatic grants.
+  const deskId = (await get("SELECT id FROM staff WHERE username='frontdesk'")).id;
+  for (const pid of [lakshmi, ramesh, venkata, farzana, srinivas, padma, anitha, rafi, koteswara, sunitha, swamy, joseph]) {
+    const mob = (await get('SELECT mobile FROM patients WHERE id=?', [pid])).mobile;
+    await insert("INSERT INTO patient_access (patient_id, mobile, kind, granted_by) VALUES (?,?,'contact',?)", [pid, mob, deskId]);
+  }
+  // Mark the one-time backfill done so a later restart never auto-grants
+  // patients created after this policy.
+  await logAccess('system', null, 'grants_backfilled', null, null, 'seed: fixture contact grants for synthetic demo patients');
 
   // The three rows from the client's sample data (verbatim values)
   const o71204 = await addOrder('ORD-71204', lakshmi, drRamanaiah, [['Haemoglobin', 'g/dL', '10.2', '12.0-15.5']]);

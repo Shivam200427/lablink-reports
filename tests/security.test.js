@@ -20,6 +20,10 @@ beforeAll(async () => {
   db.prepare('INSERT INTO staff (username, password_hash, full_name, role) VALUES (?,?,?,?)').run('sec', hashPassword('pw123'), 'Sec Desk', 'frontdesk');
   const pa = db.prepare('SELECT id FROM patients WHERE mobile=?').get('9700000001').id;
   const pb = db.prepare('SELECT id FROM patients WHERE mobile=?').get('9700000002').id;
+  const secId = db.prepare("SELECT id FROM staff WHERE username='sec'").get().id;
+  const insG = db.prepare("INSERT INTO patient_access (patient_id, mobile, kind, granted_by) VALUES (?,?,'contact',?)");
+  insG.run(pa, '9700000001', secId);
+  insG.run(pb, '9700000002', secId);
   const did = db.prepare('SELECT id FROM doctors WHERE mobile=?').get('9100000098').id;
   const insO = db.prepare('INSERT INTO orders (order_code, patient_id, doctor_id, status) VALUES (?,?,?,?)');
   insO.run('ORD-S1', pa, did, 'processing');
@@ -94,6 +98,8 @@ describe('security review', () => {
     expect([400, 429]).toContain(r6.status); // even the RIGHT code is now rejected
     const mob = '9700000099';
     db.prepare('INSERT INTO patients (full_name, age, sex, mobile) VALUES (?,?,?,?)').run('Rate Lim', 30, 'M', mob);
+    const rp = db.prepare('SELECT id FROM patients WHERE mobile=?').get(mob).id;
+    db.prepare("INSERT INTO patient_access (patient_id, mobile, kind, granted_by) VALUES (?,?,'contact',?)").run(rp, mob, db.prepare("SELECT id FROM staff WHERE username='sec'").get().id);
     const b = agent();
     await b.post('/api/auth/patient/request-otp').send({ mobile: mob });
     await b.post('/api/auth/patient/request-otp').send({ mobile: mob });

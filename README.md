@@ -9,9 +9,10 @@ the LIS uploads a CSV, the pathologist signs off an order, and the patient gets 
 link by WhatsApp/SMS (mocked). The link expires in 72 hours and asks for an OTP sent to the
 registered mobile number before the report opens. Out-of-range results get a plain-language
 summary in English, Telugu or Hindi. Critical values are never summarised - they create a
-callback task for the front desk instead. One mobile number can cover a whole family -
-and who may see whose reports is lab-verified: the front desk grants and revokes
-relatives' access per patient, with every change audit-logged.
+callback task for the front desk instead. One mobile number can cover a whole family,
+but holding that phone never opens reports on its own: access comes only from explicit
+grants - OTP-verified self-registration, a front-desk contact attestation, or a
+per-patient delegation to a relative - every grant and revoke audit-logged.
 
 ## Stack
 
@@ -63,8 +64,9 @@ then sign off the new orders and watch the outbox (staff console > Messages).
 ## Tests
 
 ```bash
-npm test     # 21 integration tests: flag rules, summary safety, OTP/consent/family,
-             # sign-off pipeline, secure links, staff console, CSV import,
+npm test     # 48 integration tests: flag rules, summary safety, OTP/consent/family,
+             # grant-based access (attestation, merges, delegation), sign-off
+             # pipeline, secure links, staff console, CSV import, sms guard,
              # + security suite (roles, IDOR, OTP lockout, link expiry, PDF access)
 ```
 

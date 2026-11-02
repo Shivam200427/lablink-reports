@@ -58,34 +58,40 @@ PDF reports: pdfkit, generated at sign-off and on demand
   language switcher persisted per patient.
 - **Messaging:** `server/outbox.js` writes every WhatsApp/SMS/OTP to an `outbox` table and a
   ticker simulates send/delivered status. Swapping in MSG91/Twilio is a one-file change.
-- **Tests:** 34 vitest integration tests (`tests/`: api, security, resilience) boot the
+- **Tests:** 48 vitest integration tests (`tests/`: api, security, resilience, sms) boot the
   real app on a throwaway database.
 
 ## 5. Core flow
 
 1. **Import:** pathologist uploads the LIS CSV (`sample-data/lis-export.csv`), or the front
    desk registers a walk-in patient directly in the console (no CSV needed - the order
-   lands in the same sign-off queue). Rows are grouped by Order ID; patients are
-   matched/created by mobile + name (one record per family member), so a family sharing
-   one phone number lands under one login.
+   lands in the same sign-off queue). Rows are grouped by Order ID; rows attach to
+   **lab-created** records by mobile + name (or by name only when exactly one lab
+   record matches). An import creates **no access grants** - a lab-created patient
+   cannot log in until the front desk attests their contact number (below).
 2. **Sign-off:** the pathologist reviews values and signs. `signOffOrder()` then, in one
    transaction: flips order status, generates the report PDF, creates a **72-hour secure
    link**, queues the WhatsApp/SMS message, generates **plain-language summaries** for every
    out-of-range result in the patient's language, and creates a **callback task** for every
    critical value.
-3. **Registration (two enrolment paths, both OTP-verified):** the lab-first path - the LIS
-   import creates the patient and the first OTP login enrols them. The self-service path -
-   a **Register** link on the login page (name, mobile, language, OTP). Self-registration
-   creates an *empty* patient record (`created_via=self`) and a mobile the lab already
-   knows is told to log in instead. Reports reach any account only through lab-asserted
-   entry (the LIS import or the front-desk walk-in form), and the linkage is provenance-aware: an export row with **mobile + name**
-   may converge with a self-registered record (holding that phone was OTP-verified; the
-   lab's export now vouches for the pairing, so the record becomes lab-verified), while a
-   **name-only** row attaches to lab-created patients only, and only when exactly one
-   patient matches - an ambiguous name is held with a staff-facing error asking for a
-   Mobile column rather than guessing between same-named patients. A self-asserted name
-   alone can never pull in someone else's report. DPDP consent is captured at registration on both
-   paths.
+3. **Registration and enrolment (grant-based; OTP proves phone possession, not
+   identity):** authorization comes only from `patient_access` grant rows - never from
+   the contact mobile on file. Three grant kinds: **self** - self-registration
+   (name, mobile, language, OTP) creates an *empty* record (`created_via=self`) and the
+   first successful OTP verify creates its `self` grant over that empty record only;
+   **contact** - a staff member attests the patient's contact number, either inline at
+   walk-in entry (the form refuses submission without the attestation tick) or later
+   with "verify contact" in the console (required before any LIS-created patient can
+   log in); **delegated** - the front desk grants a relative's mobile access to one
+   patient, revocable. A LIS import never converges with a self-registered account on
+   its own: an export row whose mobile + name matches one attaches to a lab-created
+   record and raises a **pending identity match** (`patient_merges`); the front desk
+   confirms "same person" (orders move to the account, audit-logged) or "different
+   people". A **name-only** row attaches to lab-created patients only, and only when
+   exactly one matches - an ambiguous name is held with a staff-facing error asking
+   for a Mobile column rather than guessing. A self-asserted name or a held phone
+   alone can never pull in someone else's report. DPDP consent is captured at
+   registration on both paths.
 4. **Delivery:** patient taps the link -> sees which report it is -> requests OTP -> OTP goes
    to the registered mobile (mocked) -> report opens.
 5. **After:** patient reads values + summaries, downloads the PDF, and can flag any summary
@@ -227,19 +233,27 @@ patient, status).
 
 ## 12. Testing
 
-`npm test` -> **34 vitest integration tests** against the real app on a temp database:
+`npm test` -> **48 vitest integration tests** against the real app on a temp database:
 
-- `tests/api.test.js` (21): flag rules (normal/high/low/critical), summary-engine
+- `tests/api.test.js` (30): flag rules (normal/high/low/critical), summary-engine
   safety (critical suppressed, unknown suppressed, disclaimer present, three
   languages), patient OTP login + consent + family scoping, patient self-registration (new
-  mobile registers empty, existing mobile is told to log in, OTP verify enrols) and its
-  identity-linkage boundaries (name-only import never attaches to a self-registered
-  identity, same-mobile different-name import stays a separate patient, mobile+name
-  import converges, ambiguous name-only rows are held with a staff-facing error), the full sign-off
+  mobile registers empty, existing mobile is told to log in, OTP verify creates the
+  self grant over the empty record) and its identity-linkage boundaries (name-only
+  import never attaches to a self-registered identity, same-mobile different-name
+  import stays a separate patient, mobile+name import raises a pending merge instead
+  of converging, ambiguous name-only rows are held with a staff-facing error),
+  grant-based authorization (no grant -> not registered, walk-in refuses without the
+  staff attestation, verify-contact unlocks an imported patient once, rejected merges
+  stay separate), the full sign-off
   pipeline (link + message + summaries + callback task), secure link flow
   (expiry, OTP gate, wrong OTP attempts), staff console (resend, task
   completion, flag review), CSV import edge cases, manual front-desk order entry (create -> sign-off ->
-  patient portal delivery, self-registered convergence, role + input validation).
+  patient portal delivery, front-desk attachment to a self-registered account, role +
+  input validation), and lab-verified delegation (grant/revoke, one patient only).
+- `tests/sms.test.js` (8) - the optional real-sender path: mock by default, the
+  row-locked budget claim cannot double-spend, provider rejections are labelled
+  distinctly from mock sends, and the recipient gate holds.
 - `tests/resilience.test.js` (3) - a hanging provider still falls back fast, a silent server hits the hard timeout, and the seed skips a populated database.
 - `tests/security.test.js` (7) - the security review, executable:
   role isolation (401 with no session, 403 with the wrong role); IDOR - a
@@ -256,17 +270,19 @@ patient, status).
 
 **Assumptions the lab must review before any real use:**
 
-- **Family access is lab-verified:** a login with a mobile number sees exactly
-  the patients the lab has tied to that number - patients whose contact mobile
-  it is (asserted by the lab at registration/walk-in) plus explicit delegations
-  the front desk records in the console (`patient_access`, with relation,
-  granting staff member, and full audit log; revocable). The OTP verifies
-  possession of the phone; the lab verifies whose reports that phone may open.
-  Residual risk: everyone registered to the SAME shared number still sees each
-  other (that is what sharing a contact number means) - separating them needs
-  per-patient numbers at registration, a registration-desk practice, not code.
-  Mitigations in place: per-report OTP on secure links, 72-hour link expiry,
-  explicit delegation grants, and a full access log.
+- **Family access is grant-based, never phone-possession-based:** a login with a
+  mobile number sees exactly the patients with an active `patient_access` grant for
+  that number - nothing more. `patients.mobile` is message-routing data, not
+  authorization. Grants come only from a verifiable event: OTP-verified
+  self-registration (`self`, no staff involved), a staff contact attestation
+  (`contact`, at walk-in or via "verify contact"), or an explicit staff delegation
+  (`delegated`, revocable, with relation and granting staff member). Every grant,
+  attestation, merge decision and revoke lands in the access log. Residual risk:
+  the lab's attestation is a desk practice - if the front desk attests a number
+  without checking the person, the wrong person gets in. The system makes the
+  attestation explicit and attributed rather than implicit; the lab must staff it
+  honestly. Mitigations in place: per-report OTP on secure links, 72-hour link
+  expiry, explicit revocable grants, and a full access log.
 - **Sample critical thresholds:** the critical limits in `server/kb.js` (e.g.
   potassium, haemoglobin) are SAMPLE values chosen to exercise the critical
   flow. They are NOT clinically approved - the pathologist must review and set
