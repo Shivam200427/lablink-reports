@@ -168,6 +168,7 @@ patient, status).
   `POST /api/link/:token/verify`, `GET /api/link/:token/report`,
   `GET /api/link/:token/pdf`
 - Staff: `POST /api/auth/staff/login`, `POST /api/staff/import`,
+  `GET /api/staff/orders?status=` (orders with public codes for the sign-off list),
   `POST /api/staff/orders/:id/signoff`, `POST /api/staff/orders/:id/resend-link`,
   `GET /api/staff/tasks`, `POST /api/staff/tasks/:id/done`,
   `POST /api/staff/summary-flags/:id/review`, `GET /api/staff/outbox`,
@@ -186,8 +187,10 @@ patient, status).
 7. Staff console: patient search + resend
 8. Staff message outbox: every mocked WhatsApp/SMS/OTP with delivery status, filterable by mobile and kind
 9. Staff tasks (critical callbacks + flagged summaries), weekly AI-summary review
-10. Pathologist import + sign-off
+10. Pathologist import + sign-off: processing orders listed by public order code (ORD-xxxxx) with flag status - no internal ids
 11. (depth) Doctor report list - 12. (depth) Ops report
+
+**Ops metric definitions:** the report counts only `report_ready` notifications (the WhatsApp/SMS carrying the report link). *Links sent* reconciles exactly: `links_sent = delivered + failed + in_flight` (asserted by test). OTP messages are counted separately so the two populations never mix. Report views and PDF downloads come from `access_log`.
 
 ## 11. Reliability notes
 
