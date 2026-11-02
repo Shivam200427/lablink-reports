@@ -549,6 +549,8 @@ describe('grant-based authorization', () => {
           expect(t[dir][lang].length, `${e.key}.${dir}.${lang}`).toBeGreaterThan(20);
         }
       }
+      // no blanket out-of-range reassurance - every claim must be sourced
+      expect(t.low.en).not.toMatch(/not a concern by itself|nothing to worry|usually fine/i);
     }
     // per-test wording reaches the built summary, with the non-diagnostic line
     const tx = buildSummaryTexts({ parameter: 'Haemoglobin', value: '10.2', unit: 'g/dL', reference_range: '12.0-15.5', flag: 'low' });

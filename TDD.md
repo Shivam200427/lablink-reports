@@ -170,8 +170,8 @@ Summary-sample page.
    ending with the fixed line that the result alone does not confirm any
    illness and to discuss it with a doctor. Value and reference range are
    filled in at render. A generic direction sentence remains only as the
-   fallback pattern. The wording is drafted from standard patient-education
-   facts and is NOT clinically reviewed: before any real use the pathologist
+   fallback pattern. The wording is grounded in MedlinePlus patient-education
+   pages (docs/template-sources.md, verified per analyte) and is NOT clinically reviewed: before any real use the pathologist
    must approve every text, and the Telugu/Hindi drafts need a fluent
    reviewer's pass. Analytes outside the KB get no summary by design.
 8. **Pathologist weekly quality review:** `GET /api/staff/summary-sample`
