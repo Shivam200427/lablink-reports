@@ -134,8 +134,12 @@ paid, compliant provider - none was paid for this submission.
 6. **Patient can flag a summary as wrong.** Flags land in the staff console;
    staff review and resolve. The event is access-logged.
 7. **Locked templates cover the 31 most common analytes** (`server/kb.js`,
-   name-matched, with critical thresholds) - exceeding the brief's "30 most
-   common tests". Analytes outside the KB get no summary by design.
+   name-matched, with SAMPLE critical thresholds) - exceeding the brief's "30
+   most common tests". Honestly stated: this is ONE fixed sentence pattern per
+   direction (below/above), rendered in en/te/hi with the analyte's own name,
+   value and reference range - fixed wording, nothing generated - applied to
+   all 31 analytes, not 31 distinct hand-written texts. Analytes outside the
+   KB get no summary by design.
 8. **Pathologist weekly quality review:** `GET /api/staff/summary-sample`
    returns up to **50 random summaries from the last 7 days**; the pathologist
    records an `ok` / `needs_fix` verdict per summary (stored in
@@ -206,11 +210,13 @@ patient, status).
 
 - **Family number means household access:** the OTP verifies possession of the
   family phone, **not the individual patient**. Anyone holding that phone
-  during the OTP window can open every patient registered to that number, so
-  the brief's "no report opened by the wrong person" is enforced at the
-  phone-number level, not inside a household. Mitigations in place: per-report
-  OTP on secure links, 72-hour link expiry, and a full access log. A stricter
-  option (per-patient numbers) is a product decision the lab must own.
+  during the OTP window can open every patient registered to that number.
+  This means the brief's "no report opened by the wrong person" success
+  criterion is NOT fully met inside a household - that is a residual risk and
+  an unresolved client decision, not a criterion this build claims to satisfy.
+  Mitigations in place: per-report OTP on secure links, 72-hour link expiry,
+  and a full access log. A stricter option (per-patient registered numbers) is
+  a product decision the lab must own.
 - **Sample critical thresholds:** the critical limits in `server/kb.js` (e.g.
   potassium, haemoglobin) are SAMPLE values chosen to exercise the critical
   flow. They are NOT clinically approved - the pathologist must review and set
