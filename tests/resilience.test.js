@@ -27,7 +27,7 @@ describe('AI failure resilience', () => {
     // The hanging call itself is not awaited past the hard ceiling below;
     // what must hold: result is the honest template, never a hang or error.
     expect(t.engine).toBe('template');
-    expect(t.lang_en).toContain('above the normal range');
+    expect(t.lang_en).toContain('does not confirm any illness');
     const elapsed = Date.now() - start;
     expect(elapsed).toBeLessThan(5000);
     setAIClient(null);

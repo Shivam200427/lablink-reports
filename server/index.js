@@ -222,6 +222,15 @@ async function linkByToken(token) {
      WHERE l.token_hash=?`, [sha256(token || '')]));
 }
 
+// A secure link lives only as long as the lab's authorization does: revoke the
+// contact/self grant behind it and existing link sessions die too - revocation
+// is not just about new logins.
+async function linkStillAuthorized(l) {
+  return !!(await get(
+    `SELECT 1 AS x FROM patient_access WHERE patient_id=? AND mobile=? AND kind IN ('contact','self') AND revoked_at IS NULL`,
+    [l.patient_id, l.mobile]));
+}
+
 app.get('/api/link/:token', async (req, res) => {
   const l = await linkByToken(req.params.token);
   if (!l) return res.status(404).json({ error: 'not_found' });
@@ -247,6 +256,7 @@ app.post('/api/link/:token/verify', async (req, res) => {
   const l = await linkByToken(req.params.token);
   if (!l || l.revoked) return res.status(404).json({ error: 'not_found' });
   if (l.expires_at < now()) return res.status(410).json({ error: 'expired' });
+  if (!(await linkStillAuthorized(l))) return res.status(403).json({ error: 'access_revoked' });
   const v = await verifyOTP(l.mobile, String(req.body.code || ''), 'link');
   if (v.error) return res.status(400).json(v);
   const token = await createSession('link', l.patient_id, `order:${l.order_id}`, 2);
@@ -259,6 +269,7 @@ app.get('/api/link/:token/report', async (req, res) => {
   const l = await linkByToken(req.params.token);
   if (!l || l.revoked) return res.status(404).json({ error: 'not_found' });
   if (l.expires_at < now()) return res.status(410).json({ error: 'expired' });
+  if (!(await linkStillAuthorized(l))) return res.status(403).json({ error: 'access_revoked' });
   const s = await getSession(req.cookies?.ll_session);
   if (!s || s.actor_type !== 'link' || s.scope !== `order:${l.order_id}`) return res.status(401).json({ error: 'otp_required' });
   const order = (await get(
@@ -275,6 +286,7 @@ app.get('/api/link/:token/pdf', async (req, res) => {
   const l = await linkByToken(req.params.token);
   if (!l || l.revoked) return res.status(404).json({ error: 'not_found' });
   if (l.expires_at < now()) return res.status(410).json({ error: 'expired' });
+  if (!(await linkStillAuthorized(l))) return res.status(403).json({ error: 'access_revoked' });
   const s = await getSession(req.cookies?.ll_session);
   if (!s || s.actor_type !== 'link' || s.scope !== `order:${l.order_id}`) return res.status(401).json({ error: 'otp_required' });
   const order = (await get('SELECT * FROM orders WHERE id=?', [l.order_id]));
@@ -391,6 +403,7 @@ app.get('/api/staff/merges', requireRole('staff'), async (req, res) => {
 });
 
 app.post('/api/staff/merges/:id/confirm', requireRole('staff'), async (req, res) => {
+  if (req.body?.attested !== true) return res.status(400).json({ error: 'attestation_required' });
   const m = (await get("SELECT * FROM patient_merges WHERE id=? AND status='pending'", [req.params.id]));
   if (!m) return res.status(404).json({ error: 'not_found' });
   (await run('UPDATE orders SET patient_id=? WHERE patient_id=?', [m.self_patient_id, m.lab_patient_id]));

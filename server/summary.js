@@ -4,6 +4,7 @@ import { all, logAccess, run } from './db.js';
 // database, and a logging failure is not worth losing a report over).
 const logSafe = async (...args) => { try { await logAccess(...args); } catch {} };
 import { findKBEntry } from './kb.js';
+import { testTemplate } from './templates.js';
 import { isAIEnabled, generateAISummary, validateAISummary } from './ai.js';
 
 // Plain-language summaries of OUT-OF-RANGE values.
@@ -38,15 +39,20 @@ const FACT = {
 };
 
 // Locked template floor. Sync and dependency-free; always safe to show.
+// Per-test wording (server/templates.js) covers every analyte in the KB with
+// non-diagnostic patient education; the generic sentence is the fallback for a
+// KB entry without per-test text. All template text is a DRAFT for pathologist
+// review - never presented as clinically approved.
 export function buildSummaryTexts(result) {
   const entry = findKBEntry(result.parameter);
   if (!entry) return null; // unsure: no summary for unknown tests
   if (result.flag !== 'low' && result.flag !== 'high') return null; // critical/normal/unknown: no summary
   const p = result.parameter;
+  const specific = testTemplate(entry.key, result.flag, 'en');
   return {
-    lang_en: `${PATTERN[result.flag].en(p)} ${FACT.en(result)}`,
-    lang_te: `${PATTERN[result.flag].te(p)} ${FACT.te(result)}`,
-    lang_hi: `${PATTERN[result.flag].hi(p)} ${FACT.hi(result)}`,
+    lang_en: `${specific ? testTemplate(entry.key, result.flag, 'en') : PATTERN[result.flag].en(p)} ${FACT.en(result)}`,
+    lang_te: `${specific ? testTemplate(entry.key, result.flag, 'te') : PATTERN[result.flag].te(p)} ${FACT.te(result)}`,
+    lang_hi: `${specific ? testTemplate(entry.key, result.flag, 'hi') : PATTERN[result.flag].hi(p)} ${FACT.hi(result)}`,
     engine: 'template',
   };
 }

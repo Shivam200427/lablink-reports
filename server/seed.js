@@ -86,14 +86,13 @@ async function main() {
   await run(insStaff, ['ops', hashPassword('Ops@2026'), 'G. Prasad (Operations Head)', 'ops']);
   await run(insStaff, ['patho', hashPassword('Patho@2026'), 'Dr. M. Vidyasagar (Pathologist)', 'pathologist']);
 
-  // Fixture grants: seeded patients stand in for lab-registered patients whose
-  // contact numbers were verified when the lab registered them, so each holds
-  // a 'contact' grant attributed to the front desk. Records created AFTER the
+  // Fixture grants for the synthetic demo identities ONLY: granted_by NULL
+  // marks them as system/demo fixtures, NOT staff attestations (no staff
+  // member ever verified these fictional contacts). Records created after the
   // grant policy (imports, unverified walk-ins) get no automatic grants.
-  const deskId = (await get("SELECT id FROM staff WHERE username='frontdesk'")).id;
   for (const pid of [lakshmi, ramesh, venkata, farzana, srinivas, padma, anitha, rafi, koteswara, sunitha, swamy, joseph]) {
     const mob = (await get('SELECT mobile FROM patients WHERE id=?', [pid])).mobile;
-    await insert("INSERT INTO patient_access (patient_id, mobile, kind, granted_by) VALUES (?,?,'contact',?)", [pid, mob, deskId]);
+    await insert("INSERT INTO patient_access (patient_id, mobile, kind, granted_by) VALUES (?,?,'contact',NULL)", [pid, mob]);
   }
   // Mark the one-time backfill done so a later restart never auto-grants
   // patients created after this policy.

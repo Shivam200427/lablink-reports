@@ -70,10 +70,10 @@ describe('flag rules', () => {
 describe('summary engine safety', () => {
   it('summarizes only out-of-range known tests, short text with facts, no advice', () => {
     const t = buildSummaryTexts({ parameter: 'Haemoglobin', value: '10.2', unit: 'g/dL', reference_range: '12.0-15.5', flag: 'low' });
-    expect(t.lang_en).toContain('below the normal range');
+    expect(t.lang_en).toContain('does not confirm any illness'); // per-test template, non-diagnostic
     expect(t.lang_en).toContain('10.2');
     expect(t.lang_en).toContain('12.0-15.5');
-    expect(t.lang_en.length).toBeLessThan(160);
+    expect(t.lang_en.length).toBeLessThan(320); // per-test sentence + facts + non-diagnostic line
     expect(t.lang_en).not.toMatch(/medicine|exercise|diet|treatment/i);
     expect(buildSummaryTexts({ parameter: 'Potassium', value: '6.8', unit: 'mmol/L', reference_range: '3.5-5.1', flag: 'critical' })).toBeNull();
     expect(buildSummaryTexts({ parameter: 'Haemoglobin', value: '13', unit: 'g/dL', reference_range: '12.0-15.5', flag: 'normal' })).toBeNull();
@@ -81,8 +81,8 @@ describe('summary engine safety', () => {
   });
   it('produces all three languages', () => {
     const t = buildSummaryTexts({ parameter: 'LDL Cholesterol', value: '142', unit: 'mg/dL', reference_range: '0-100', flag: 'high' });
-    expect(t.lang_te).toMatch(/ఎక్కువగా/);
-    expect(t.lang_hi).toMatch(/अधिक/);
+    expect(t.lang_te).toMatch(/ఫలితం/);
+    expect(t.lang_hi).toMatch(/परिणाम/);
     expect(t.engine).toBe('template');
   });
   it('uses validated AI output when a provider is configured', async () => {
@@ -96,7 +96,8 @@ describe('summary engine safety', () => {
     setAIClient(async () => 'You should take medicine, change your diet and exercise daily.');
     let t = await buildSummaryTextsWithAI({ parameter: 'LDL Cholesterol', value: '142', unit: 'mg/dL', reference_range: '0-100', flag: 'high' });
     expect(t.engine).toBe('template');
-    expect(t.lang_en).toContain('above the normal range');
+    expect(t.lang_en).toContain('bad');
+    expect(t.lang_en).toContain('does not confirm any illness');
     setAIClient(async () => 'This value is fine, nothing to see here.');
     t = await buildSummaryTextsWithAI({ parameter: 'LDL Cholesterol', value: '142', unit: 'mg/dL', reference_range: '0-100', flag: 'high' });
     expect(t.engine).toBe('template'); // missing the actual value -> rejected
@@ -247,7 +248,8 @@ describe('patient self-registration', () => {
     const merges = await s.get('/api/staff/merges');
     const m = merges.body.merges.find((x) => x.self_name === 'Merge Case');
     expect(m).toBeTruthy();
-    expect((await s.post(`/api/staff/merges/${m.id}/confirm`)).body.ok).toBe(true);
+    expect((await s.post(`/api/staff/merges/${m.id}/confirm`)).status).toBe(400); // attestation required
+    expect((await s.post(`/api/staff/merges/${m.id}/confirm`).send({ attested: true })).body.ok).toBe(true);
     const orders = await a.get('/api/patient/orders');
     expect(orders.body.orders.map((o) => o.order_code)).toContain('ORD-T9');
   });
@@ -310,7 +312,8 @@ describe('patient self-registration', () => {
     await staffLogin(s);
     const merges = await s.get('/api/staff/merges');
     const m = merges.body.merges.find((x) => x.self_name === 'Converge Case');
-    expect((await s.post(`/api/staff/merges/${m.id}/confirm`)).body.ok).toBe(true);
+    expect((await s.post(`/api/staff/merges/${m.id}/confirm`)).status).toBe(400); // attestation required
+    expect((await s.post(`/api/staff/merges/${m.id}/confirm`).send({ attested: true })).body.ok).toBe(true);
     orders = await a.get('/api/patient/orders');
     const codes = orders.body.orders.map(o => o.order_code);
     expect(codes).toContain('ORD-T14'); // merged order visible after attestation
@@ -506,6 +509,53 @@ describe('grant-based authorization', () => {
     expect(g).toHaveLength(1);
     expect(g[0].kind).toBe('self');
     expect(g[0].granted_by).toBeNull();
+  });
+
+  it('revoking the contact grant kills active link sessions too, not only new logins', async () => {
+    const s = agent();
+    await staffLogin(s);
+    const r = await s.post('/api/staff/orders').send({
+      patientName: 'Revoke Link', mobile: '9800000089', contactVerified: true,
+      results: [{ parameter: 'LDL Cholesterol', value: '142', referenceRange: '0-100' }],
+    });
+    expect(r.status).toBe(200);
+    await s.post(`/api/staff/orders/${r.body.orderId}/signoff`).send({});
+    // patient opens the secure link with OTP (active link session)
+    const linkMsg = db.prepare(`SELECT body FROM outbox WHERE order_id=? AND kind='report_ready'`).get(r.body.orderId);
+    const tok = linkMsg.body.match(/\/r\/([A-Za-z0-9_-]+)/)[1];
+    const p = agent();
+    await p.post(`/api/link/${tok}/request-otp`).send({});
+    const code = await lastOTP('9800000089');
+    expect((await p.post(`/api/link/${tok}/verify`).send({ code })).body.ok).toBe(true);
+    expect((await p.get(`/api/link/${tok}/report`)).status).toBe(200);
+    // staff revokes the contact grant -> the live link session immediately dies
+    const det = await s.get(`/api/staff/patients/${r.body.patientId}`);
+    const contactGrant = det.body.familyAccess.find((g) => g.kind === 'contact');
+    expect((await s.post(`/api/staff/patients/${r.body.patientId}/access/${contactGrant.id}/revoke`).send({})).body.ok).toBe(true);
+    expect((await p.get(`/api/link/${tok}/report`)).status).toBe(403);
+    expect((await p.get(`/api/link/${tok}/pdf`)).status).toBe(403);
+    // and the portal login is closed as well
+    expect((await agent().post('/api/auth/patient/request-otp').send({ mobile: '9800000089' })).status).toBe(404);
+  });
+
+  it('every KB analyte has per-test locked template text in all three languages, non-diagnostic', async () => {
+    const { KB } = await import('../server/kb.js');
+    const { TEST_TEMPLATES } = await import('../server/templates.js');
+    for (const e of KB) {
+      const t = TEST_TEMPLATES[e.key];
+      expect(t, e.key).toBeTruthy();
+      for (const dir of ['high', 'low']) {
+        for (const lang of ['en', 'te', 'hi']) {
+          expect(t[dir][lang].length, `${e.key}.${dir}.${lang}`).toBeGreaterThan(20);
+        }
+      }
+    }
+    // per-test wording reaches the built summary, with the non-diagnostic line
+    const tx = buildSummaryTexts({ parameter: 'Haemoglobin', value: '10.2', unit: 'g/dL', reference_range: '12.0-15.5', flag: 'low' });
+    expect(tx.lang_en).toContain('carries oxygen');
+    expect(tx.lang_en).toContain('does not confirm any illness');
+    expect(tx.lang_te).toContain('హీమోగ్లోబిన్');
+    expect(tx.engine).toBe('template');
   });
 
   it('a rejected merge keeps the lab record separate', async () => {

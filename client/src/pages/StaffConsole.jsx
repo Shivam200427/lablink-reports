@@ -41,7 +41,7 @@ export default function StaffConsole() {
     if (r.ok) setMerges(r.data.merges);
   }
   async function resolveMerge(id, action) {
-    const r = await api(`/api/staff/merges/${id}/${action}`, { method: 'POST', body: {} });
+    const r = await api(`/api/staff/merges/${id}/${action}`, { method: 'POST', body: action === 'confirm' ? { attested: true } : {} });
     if (r.ok) { loadMerges(); setMsg(action === 'confirm' ? 'Identity confirmed - the lab reports now show in the patient\'s account.' : 'Kept as separate patients.'); }
   }
   async function verifyContact(patientId) {
@@ -142,7 +142,7 @@ export default function StaffConsole() {
                 <div key={g.id} className="flex items-center justify-between rounded-xl border border-slate-100 px-4 py-2">
                   <div className="text-sm text-slate-700">
                     <span className="font-medium">{g.mobile}</span>
-                    {g.kind === 'contact' && <span className="text-slate-400"> · registered contact · verified by {g.granted_by_name}</span>}
+                    {g.kind === 'contact' && <span className="text-slate-400"> · registered contact · {g.granted_by_name ? `verified by ${g.granted_by_name}` : 'demo fixture (system)'}</span>}
                     {g.kind === 'self' && <span className="text-slate-400"> · self-registered (OTP verified)</span>}
                     {(!g.kind || g.kind === 'delegated') && <span className="text-slate-400">{g.relation ? ` · ${g.relation}` : ''} · granted by {g.granted_by_name}</span>}
                     <span className="text-slate-400"> · {(g.created_at || '').slice(0, 10)}</span>

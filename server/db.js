@@ -291,24 +291,21 @@ export async function initDB() {
     db = sdb;
   }
 
-  // One-time migration for databases that predate grant-based authorization:
-  // pre-existing lab-registered patients receive a staff-attributed 'contact'
-  // grant and pre-existing self-registered accounts their 'self' grant, so the
-  // demo keeps working. Patients and imports created AFTER this policy get no
-  // grants from here. An access_log marker makes it run exactly once.
+  // One-time migration for databases that predate grant-based authorization.
+  // Only 'self' grants are backfilled: a pre-existing self-registered account
+  // already proved possession of its phone by OTP, so that grant records a
+  // real event. Lab-created patients get NO backfill - there is no recorded
+  // staff attestation for them, so they become unverified until the front desk
+  // actually verifies the contact in the console. Demo fixture grants come
+  // from seed.js (granted_by NULL = system/demo), never from here.
   const backfilled = await get("SELECT 1 AS x FROM access_log WHERE action='grants_backfilled' LIMIT 1");
-  const anyStaff = await get('SELECT id FROM staff ORDER BY id LIMIT 1');
-  if (!backfilled && anyStaff) {
-    await run(`INSERT INTO patient_access (patient_id, mobile, kind, granted_by)
-      SELECT p.id, p.mobile, 'contact', ? FROM patients p
-      WHERE p.created_via='lis' AND p.merged_into IS NULL AND p.mobile NOT LIKE 'unknown-%'
-      AND NOT EXISTS (SELECT 1 FROM patient_access pa WHERE pa.patient_id=p.id AND pa.mobile=p.mobile AND pa.revoked_at IS NULL)`, [anyStaff.id]);
+  if (!backfilled) {
     await run(`INSERT INTO patient_access (patient_id, mobile, kind, granted_by)
       SELECT p.id, p.mobile, 'self', NULL FROM patients p
       WHERE p.created_via='self' AND p.merged_into IS NULL AND p.mobile NOT LIKE 'unknown-%'
       AND NOT EXISTS (SELECT 1 FROM patient_access pa WHERE pa.patient_id=p.id AND pa.mobile=p.mobile AND pa.revoked_at IS NULL)`);
     await logAccess('system', null, 'grants_backfilled', null, null,
-      'one-time migration: pre-existing patients received contact/self grants');
+      'one-time migration: self grants for OTP-verified self-registered accounts only; lab-created patients left unverified');
   }
 }
 
