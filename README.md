@@ -1,6 +1,6 @@
 # LabLink - Lab Report Delivery for Company A, Vijayawada
 
-**Live demo:** https://lablink-reports.onrender.com (free tier; sleeps when idle - first load can take ~50s; data resets to seed on restart)
+**Live demo:** https://lablink-reports.onrender.com (free tier; sleeps when idle - first load can take ~50s; demo data persists on Render's free Postgres across restarts and deploys)
 
 ("LabLink" is a demo brand name chosen for this submission; the client is "Company A" per the brief.)
 
