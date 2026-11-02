@@ -3,17 +3,17 @@ import { now } from './crypto.js';
 
 // Mocked WhatsApp/SMS: messages are written to the outbox table only.
 // A ticker simulates the provider: queued -> sent -> delivered.
-export async function queueMessage({ channel, toMobile, body, kind, orderId }) {
+export async function queueMessage({ channel, toMobile, body, kind, orderId, provider = null, providerStatus = null, status = 'queued' }) {
   const id = await insert(
-    'INSERT INTO outbox (channel, to_mobile, body, kind, order_id) VALUES (?,?,?,?,?)'
-  , [channel, toMobile, body, kind, orderId ?? null]);
+    'INSERT INTO outbox (channel, to_mobile, body, kind, order_id, status, provider, provider_status) VALUES (?,?,?,?,?,?,?,?)'
+  , [channel, toMobile, body, kind, orderId ?? null, status, provider, providerStatus]);
   await logAccess('system', null, 'message_queued', 'outbox', id, `${channel} -> ${toMobile} (${kind})`);
   return id;
 }
 
 export async function tickOutbox() {
-  (await run(`UPDATE outbox SET status='sent', updated_at=? WHERE status='queued'`, [now()]));
-  (await run(`UPDATE outbox SET status='delivered', updated_at=? WHERE status='sent' AND updated_at <= datetime('now','-20 seconds')`, [now()]));
+  (await run(`UPDATE outbox SET status='sent', updated_at=? WHERE status='queued' AND provider IS NULL`, [now()]));
+  (await run(`UPDATE outbox SET status='delivered', updated_at=? WHERE status='sent' AND provider IS NULL AND updated_at <= datetime('now','-20 seconds')`, [now()]));
 }
 
 export async function resendMessage(outboxId, actor) {

@@ -282,9 +282,14 @@ patient, status).
   creation, 14-day grace period before deletion). Before that date the demo
   must be re-pointed at a fresh database or back to SQLite, or the service
   starts failing. Real/multi-branch use needs a paid, managed Postgres.
-- **Mocked messaging:** no real SMS/WhatsApp leaves the box (submission budget:
-  no paid services). The outbox proves the full pipeline; a provider plugs into
-  `server/outbox.js`. OTPs are read from the server log/outbox in the demo.
+- **Messaging, mocked by default:** no real SMS/WhatsApp leaves the box unless explicitly
+  enabled. The outbox proves the full pipeline. An optional demo-grade Fast2SMS Quick SMS
+  sender (`server/sms.js`, env `FAST2SMS_API_KEY` / `FAST2SMS_ALLOWED_RECIPIENT` /
+  `FAST2SMS_TOTAL_BUDGET`) sends real OTPs to the single allowed demo recipient only;
+  provider acceptance is stored as `sent` (never auto-`delivered`), failures are stored
+  `failed` with a mocked fallback copy, and a total-send budget (default 0, claimed atomically before the provider call, never released) plus the existing per-mobile OTP
+  rate limit bound wallet spend. Production rollout needs a DLT-registered transactional
+  route. OTPs are read from the staff outbox in the demo.
 - **AI provider:** the demo is configured for Google's Gemini free tier and
   the full AI path was proven end-to-end against the real API (validated
   `engine=ai` sentences, including Telugu). Gemini's free tier trains on

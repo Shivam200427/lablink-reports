@@ -16,7 +16,13 @@ callback task for the front desk instead. One mobile number can cover a whole fa
 - Node.js 22 + Express; SQLite locally, Postgres when `DATABASE_URL` is set (one async data layer)
 - React 19 + Vite + Tailwind CSS 3 (mobile-first, large text, low-end phone friendly)
 - pdfkit for report PDFs, vitest for tests
-- All messaging (WhatsApp/SMS/OTP) is mocked into an `outbox` table - no paid services
+- Messaging defaults to a mocked `outbox` table - no paid services needed. An optional
+  Fast2SMS Quick SMS sender exists for demos: set `FAST2SMS_API_KEY`,
+  `FAST2SMS_ALLOWED_RECIPIENT` (10-digit Indian mobile; only this number can ever
+  receive a real SMS), and `FAST2SMS_TOTAL_BUDGET` (default 0 = never send; each
+  send claims one slot atomically before the provider call and the slot is never
+  released, even on failure). Provider failures still record a mocked outbox copy
+  so the demo never stalls; real sends report provider acceptance, never delivery.
 - Plain-language summaries use an AI provider when configured (`AI_API_KEY`, or a
   keyless `AI_BASE_URL` endpoint); every AI sentence is validated and falls back
   to locked templates when it throttles or fails validation. The live demo runs

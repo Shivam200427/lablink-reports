@@ -1,6 +1,7 @@
 import { get, logAccess, run } from './db.js';
 import { sha256, randomOTP, randomToken, addHours, now } from './crypto.js';
 import { queueMessage } from './outbox.js';
+import { sendRealSms } from './sms.js';
 
 const OTP_TTL_MIN = 10;
 const MAX_ATTEMPTS = 5;
@@ -13,7 +14,20 @@ export async function requestOTP(mobile, purpose = 'login') {
   if (recent >= 3) return { error: 'rate_limited' };
   const code = randomOTP();
   (await run('INSERT INTO otps (mobile, code_hash, purpose, expires_at) VALUES (?,?,?,?)', [mobile, sha256(code), purpose, new Date(Date.now() + OTP_TTL_MIN * 60000).toISOString().replace('T',' ').slice(0,19)]));
-  await queueMessage({ channel: 'sms', toMobile: mobile, body: `Your LabLink OTP is ${code}. Valid for ${OTP_TTL_MIN} minutes. Do not share it.`, kind: 'otp' });
+  const body = `Your LabLink OTP is ${code}. Valid for ${OTP_TTL_MIN} minutes. Do not share it.`;
+  const real = await sendRealSms({ toMobile: mobile, body });
+  if (real.attempted) {
+    // Provider row records the honest outcome: 'sent' = accepted by the
+    // provider (never auto-promoted to 'delivered'); 'failed' = rejected/error.
+    await queueMessage({ channel: 'sms', toMobile: mobile, body, kind: 'otp', provider: 'fast2sms', providerStatus: real.providerStatus, status: real.ok ? 'sent' : 'failed' });
+    if (!real.ok) {
+      // Safe fallback: a mocked copy keeps the demo flow readable in the outbox
+      // when the provider call fails; it is never sent anywhere.
+      await queueMessage({ channel: 'sms', toMobile: mobile, body, kind: 'otp' });
+    }
+  } else {
+    await queueMessage({ channel: 'sms', toMobile: mobile, body, kind: 'otp' });
+  }
   await logAccess('system', null, 'otp_requested', 'mobile', null, `${purpose} OTP sent to ${mobile}`);
   return { ok: true };
 }

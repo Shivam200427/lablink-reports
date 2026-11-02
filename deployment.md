@@ -81,8 +81,12 @@ DPDP residency compliance.
 ## 5. Production checklist (what a real rollout still needs)
 
 - HTTPS in front of the app (links and OTPs must never travel over plain HTTP).
-- A real SMS/WhatsApp provider (e.g. MSG91/Twilio) replacing the mocked outbox - the
-  integration point is `server/outbox.js`.
+- Real SMS: off by default (mocked outbox). Optional demo-grade Fast2SMS Quick SMS via
+  `FAST2SMS_API_KEY` + `FAST2SMS_ALLOWED_RECIPIENT` + `FAST2SMS_TOTAL_BUDGET` (see README):
+  prepaid wallet, approx. Rs 7/SMS, real sends restricted to the allowed recipient,
+  provider acceptance recorded honestly (`sent`, never fake `delivered`), mocked fallback
+  on failure. Production India delivery needs a DLT-registered transactional route
+  (operator entity registration, business documents) - that is the real-rollout step.
 - Set a strong unique `PASSWORD_SALT` and rotate the demo staff passwords.
 - A persistent volume for `DATA_DIR` plus database backups.
 - For AI-written summaries in production, a paid compliant provider via
