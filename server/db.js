@@ -307,6 +307,33 @@ export async function initDB() {
     await logAccess('system', null, 'grants_backfilled', null, null,
       'one-time migration: self grants for OTP-verified self-registered accounts only; lab-created patients left unverified');
   }
+
+  // Known synthetic seed identities (exact name+mobile pairs from seed.js) may
+  // receive SYSTEM/DEMO fixture grants so the published demo logins keep
+  // working on databases that predate the grant policy. granted_by NULL marks
+  // them as system fixtures, never staff attestations. Any record not in this
+  // exact list - including anything a real user created - is left unverified.
+  const seedFixtures = [
+    ['Lakshmi Prasanna K', '9000000001'], ['Ramesh K', '9000000001'],
+    ['Venkata Rao M', '9000000002'], ['Farzana Begum', '9000000003'],
+    ['Srinivas Rao', '9000000004'], ['Padma Srinivas', '9000000004'],
+    ['Anitha Devi', '9000000005'], ['Mohammed Rafi', '9000000006'],
+    ['Koteswara Rao', '9000000007'], ['Sunitha Varma', '9000000008'],
+    ['Narasimha Swamy', '9000000009'], ['Joseph Raj', '9000000010'],
+  ];
+  let fixtureCount = 0;
+  for (const [name, mob] of seedFixtures) {
+    const p = await get('SELECT id FROM patients WHERE full_name=? AND mobile=? AND merged_into IS NULL', [name, mob]);
+    if (!p) continue;
+    const has = await get('SELECT 1 AS x FROM patient_access WHERE patient_id=? AND mobile=? AND revoked_at IS NULL', [p.id, mob]);
+    if (has) continue;
+    await run("INSERT INTO patient_access (patient_id, mobile, kind, granted_by) VALUES (?,?,'contact',NULL)", [p.id, mob]);
+    fixtureCount++;
+  }
+  if (fixtureCount > 0) {
+    await logAccess('system', null, 'seed_demo_grants', null, null,
+      `system/demo fixture grants restored for ${fixtureCount} known synthetic seed identities (granted_by NULL; not staff attestations)`);
+  }
 }
 
 export async function all(sql, params = []) {
