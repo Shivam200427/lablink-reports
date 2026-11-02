@@ -41,7 +41,7 @@ Tests: `npm test`
 
 | Role | Login |
 | --- | --- |
-| Patient | mobile `9000000001` (Lakshmi's family) or `9000000004` (Srinivas & Padma) - OTP appears in the server log and the staff console's Messages view |
+| Patient | mobile `9000000001` (Lakshmi's family) or `9000000004` (Srinivas & Padma) - OTP appears in the server log and the staff console's Messages view. These seeded families log in through system/demo fixture grants (labeled as such in the console, never attributed to a staff member); any patient created later - by import or walk-in - can log in only after the front desk verifies their contact number |
 | Front desk | username `frontdesk`, password `Lab@2026` |
 | Doctor | mobile `9100000002` (Dr. P. Anitha) - OTP login |
 | Lab owner / ops | username `ops`, password `Ops@2026` |
@@ -73,10 +73,14 @@ behind any HTTPS reverse proxy).
 
 ## 4. India data residency note
 
-The free-tier hosts above run outside India. For real Indian patient data,
-deploy in an India region (e.g. AWS `ap-south-1` Mumbai or Azure Central
-India) so reports and phone numbers stay in-country. This demo does not claim
-DPDP residency compliance.
+The free-tier hosts above run outside India (Render has no India region on any
+plan - verified on Render's region docs). The brief asks for hosting in India,
+so this demo leaves that constraint openly unmet. (DPDP Act 2023 itself does
+not mandate in-country hosting; it restricts transfers only to notified
+countries - but the client's requirement stands regardless.) For real Indian
+patient data, deploy in an India region (e.g. AWS `ap-south-1` Mumbai or
+Azure Central India) so reports and phone numbers stay in-country. This demo
+does not claim DPDP residency compliance.
 
 ## 5. Production checklist (what a real rollout still needs)
 
