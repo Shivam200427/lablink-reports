@@ -605,7 +605,19 @@ app.get('/api/staff/ops-report', requireRole('staff'), async (req, res) => {
   // Delivery metrics are scoped to report-ready notifications so the numbers
   // reconcile: linksSent = delivered + failed + inFlight (queued/sent).
   // OTP messages are a separate, clearly-labelled count.
-  const nstat = (await all(`SELECT status, COUNT(*) c FROM outbox WHERE kind='report_ready' GROUP BY status`, []));
+  // TEMP-DIAG: per-section labels to find the PG-only failure (removed after fix)
+  const diag = [];
+  const q = async (label, fn) => { try { return await fn(); } catch (e) { diag.push(label + ': ' + (e.code || e.message).slice(0, 60)); return null; } };
+  const nstat = (await q('nstat', () => all(`SELECT status, COUNT(*) c FROM outbox WHERE kind='report_ready' GROUP BY status`, [])));
+  if (diag.length) return res.status(500).json({ error: 'internal', diag });
+  const otpC = await q('otpC', () => get(`SELECT COUNT(*) c FROM outbox WHERE kind='otp'`, []));
+  const ordC = await q('ordC', () => all('SELECT status, COUNT(*) c FROM orders GROUP BY status', []));
+  const vw = await q('views', () => get(`SELECT COUNT(*) c FROM access_log WHERE action LIKE 'report_view%'`, []));
+  const dl = await q('downloads', () => get(`SELECT COUNT(*) c FROM access_log WHERE action='pdf_download'`, []));
+  const cb = await q('callbacks', () => get(`SELECT COUNT(*) c FROM callback_tasks WHERE status='open'`, []));
+  const fl = await q('flags', () => get(`SELECT COUNT(*) c FROM summary_flags WHERE status='open'`, []));
+  const dy = await q('daily', () => all(`SELECT substr(created_at,1,10) day, COUNT(*) messages FROM outbox GROUP BY substr(created_at,1,10) ORDER BY day DESC LIMIT 14`, []));
+  if (diag.length) return res.status(500).json({ error: 'internal', diag });
   const n = (k) => Number(nstat.find((s) => s.status === k)?.c || 0);
   const notif = {
     linksSent: n('delivered') + n('failed') + n('sent') + n('queued'),
