@@ -26,16 +26,21 @@ export default function LinkGate() {
 
   async function sendOtp() {
     setBusy(true); setError('');
-    await api(`/api/link/${token}/request-otp`, { method: 'POST', body: {} });
-    setBusy(false); setStep('otp');
+    const r = await api(`/api/link/${token}/request-otp`, { method: 'POST', body: {} });
+    setBusy(false);
+    if (r.status === 429) return setError(t(lang, 'rateLimited'));
+    if (!r.ok) return setError(t(lang, 'genericError'));
+    setStep('otp');
   }
   async function verify(e) {
     e.preventDefault(); setBusy(true); setError('');
     const r = await api(`/api/link/${token}/verify`, { method: 'POST', body: { code } });
-    if (!r.ok) { setBusy(false); return setError(t(lang, 'wrongOtp')); }
+    if (r.status === 400) { setBusy(false); return setError(t(lang, 'wrongOtp')); }
+    if (r.status === 429) { setBusy(false); return setError(t(lang, 'rateLimited')); }
+    if (!r.ok) { setBusy(false); return setError(t(lang, 'genericError')); }
     const rep = await api(`/api/link/${token}/report`);
     setBusy(false);
-    if (!rep.ok) return setError(t(lang, 'wrongOtp'));
+    if (!rep.ok) return setError(t(lang, 'genericError'));
     setReport(rep.data); setStep('report');
   }
 
@@ -44,7 +49,7 @@ export default function LinkGate() {
       <BrandHeader right={<LangPicker lang={lang} setLang={setLang} />} />
       {info.error && (
         <div className="card text-lg text-slate-600">
-          {info.error === 'expired' ? t(lang, 'linkExpired') : 'Link not found.'}
+          {info.error === 'expired' ? t(lang, 'linkExpired') : t(lang, 'linkNotFound')}
           <div className="mt-4"><Link className="btn-ghost" to="/">LabLink</Link></div>
         </div>
       )}

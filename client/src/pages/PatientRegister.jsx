@@ -23,14 +23,17 @@ export default function PatientRegister() {
     setBusy(false);
     if (r.status === 409) return setError(t(lang, 'alreadyRegistered'));
     if (r.status === 400) return setError(t(lang, r.data?.error === 'invalid_name' ? 'invalidName' : 'wrongOtp'));
-    if (!r.ok) return setError(t(lang, 'wrongOtp'));
+    if (r.status === 429) return setError(t(lang, 'rateLimited'));
+    if (!r.ok) return setError(t(lang, 'genericError'));
     setStep('otp');
   }
   async function verify(e, consent) {
     e?.preventDefault(); setBusy(true); setError('');
     const r = await api('/api/auth/patient/verify', { method: 'POST', body: { mobile, code, ...(consent ? { consent: true } : {}) } });
     setBusy(false);
-    if (!r.ok) return setError(t(lang, 'wrongOtp'));
+    if (r.status === 400) return setError(t(lang, 'wrongOtp'));
+    if (r.status === 429) return setError(t(lang, 'rateLimited'));
+    if (!r.ok) return setError(t(lang, 'genericError'));
     if (r.data.needsConsent) return setStep('consent');
     nav('/home', { state: { justRegistered: true } });
   }
