@@ -66,7 +66,7 @@ export default function PatientLogin() {
         )}
       </div>
       <p className="mt-6 text-center text-sm text-slate-400">
-        <a className="underline" href="/staff">Staff</a> · <a className="underline" href="/doctor">Doctors</a>
+        <a className="underline" href="/staff">{t(lang, 'staffLink')}</a> · <a className="underline" href="/doctor">{t(lang, 'doctorsLink')}</a>
       </p>
     </div>
   );

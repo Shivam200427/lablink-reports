@@ -50,7 +50,7 @@ export default function LinkGate() {
       {info.error && (
         <div className="card text-lg text-slate-600">
           {info.error === 'expired' ? t(lang, 'linkExpired') : t(lang, 'linkNotFound')}
-          <div className="mt-4"><Link className="btn-ghost" to="/">LabLink</Link></div>
+          <div className="mt-4"><Link className="btn-ghost" to="/">{t(lang, 'goHome')}</Link></div>
         </div>
       )}
       {!info.error && step === 'intro' && (
