@@ -27,8 +27,8 @@ Tests: `npm test`
 | `DATA_DIR` | `./data` | Where the SQLite DB and generated PDFs live |
 | `BASE_URL` | `http://localhost:PORT` | Public base URL used inside report links - set this to the real https URL in production |
 | `PASSWORD_SALT` | `lablink-dev-salt` | Salt for staff password hashing - set a unique random value in production |
-| `AI_API_KEY` | _(unset)_ | Enables the AI summary engine. Unset = free demo mode using locked templates |
-| `AI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible chat API endpoint |
+| `AI_API_KEY` | _(unset)_ | Key for a paid/production AI provider. Unset = free demo mode using locked templates |
+| `AI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible chat API endpoint; a keyless endpoint works without `AI_API_KEY` (demo-proven) |
 | `AI_MODEL` | `gpt-4o-mini` | Model used for summaries |
 
 ## 2b. Demo logins (synthetic data only, after `npm run seed`)
@@ -70,8 +70,10 @@ DPDP residency compliance.
   integration point is `server/outbox.js`.
 - Set a strong unique `PASSWORD_SALT` and rotate the demo staff passwords.
 - A persistent volume for `DATA_DIR` plus database backups.
-- An AI provider key (`AI_API_KEY`) if AI-written summaries are wanted; without
-  it the tested locked templates serve summaries at zero cost.
+- For AI-written summaries in production, a paid compliant provider via
+  `AI_API_KEY` (a keyless free endpoint via `AI_BASE_URL` was used to prove the
+  AI path in the demo, but is not suitable for real patient data); without
+  either, the tested locked templates serve summaries at zero cost.
 - The lab's pathologist must review the SAMPLE critical thresholds in
   `server/kb.js` before real use.
 - Postgres instead of SQLite if multiple lab branches ever share one deployment.

@@ -65,7 +65,7 @@ export default function LinkGate() {
         </form>
       )}
       {step === 'report' && report && (
-        <ReportBody order={report.order} results={report.results} hasPdf={false} lang={lang} />
+        <ReportBody order={report.order} results={report.results} hasPdf={!!report.hasPdf} pdfUrl={`/api/link/${token}/pdf`} lang={lang} />
       )}
     </div>
   );

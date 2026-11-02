@@ -31,7 +31,8 @@ function actor(req) {
 function requireRole(...types) {
   return (req, res, next) => {
     const a = actor(req);
-    if (!a || !types.includes(a.type)) return res.status(401).json({ error: 'unauthorized' });
+    if (!a) return res.status(401).json({ error: 'unauthorized' });
+    if (!types.includes(a.type)) return res.status(403).json({ error: 'forbidden' });
     req.actor = a;
     next();
   };
@@ -158,6 +159,7 @@ app.get('/api/link/:token', (req, res) => {
 app.post('/api/link/:token/request-otp', (req, res) => {
   const l = linkByToken(req.params.token);
   if (!l || l.revoked) return res.status(404).json({ error: 'not_found' });
+  if (l.expires_at < now()) return res.status(410).json({ error: 'expired' });
   const r = requestOTP(l.mobile, 'link');
   if (r.error) return res.status(429).json(r);
   res.json({ ok: true, mobile: mask(l.mobile) });
@@ -178,6 +180,7 @@ app.post('/api/link/:token/verify', (req, res) => {
 app.get('/api/link/:token/report', (req, res) => {
   const l = linkByToken(req.params.token);
   if (!l || l.revoked) return res.status(404).json({ error: 'not_found' });
+  if (l.expires_at < now()) return res.status(410).json({ error: 'expired' });
   const s = getSession(req.cookies?.ll_session);
   if (!s || s.actor_type !== 'link' || s.scope !== `order:${l.order_id}`) return res.status(401).json({ error: 'otp_required' });
   const order = db.prepare(
@@ -186,8 +189,51 @@ app.get('/api/link/:token/report', (req, res) => {
   const results = db.prepare(
     `SELECT r.*, s.id summary_id, s.lang_en, s.lang_te, s.lang_hi, s.confidence
      FROM results r LEFT JOIN summaries s ON s.result_id=r.id WHERE r.order_id=?`).all(l.order_id);
+  const pdfFile = path.join(DATA_DIR, 'pdfs', `${order.order_code}.pdf`);
   logAccess('patient', l.patient_id, 'report_view_via_link', 'order', l.order_id, l.order_code);
-  res.json({ order, results });
+  res.json({ order, results, hasPdf: fs.existsSync(pdfFile) });
+});
+
+app.get('/api/link/:token/pdf', (req, res) => {
+  const l = linkByToken(req.params.token);
+  if (!l || l.revoked) return res.status(404).json({ error: 'not_found' });
+  if (l.expires_at < now()) return res.status(410).json({ error: 'expired' });
+  const s = getSession(req.cookies?.ll_session);
+  if (!s || s.actor_type !== 'link' || s.scope !== `order:${l.order_id}`) return res.status(401).json({ error: 'otp_required' });
+  const order = db.prepare('SELECT * FROM orders WHERE id=?').get(l.order_id);
+  const file = path.join(DATA_DIR, 'pdfs', `${order.order_code}.pdf`);
+  if (!fs.existsSync(file)) return res.status(404).json({ error: 'no_pdf' });
+  logAccess('patient', l.patient_id, 'pdf_download_via_link', 'order', l.order_id, order.order_code);
+  res.download(file, `${order.order_code}.pdf`);
+});
+
+// Weekly AI-summary quality sample: the pathologist reviews up to 50 summaries
+// from the last 7 days (client brief safety requirement).
+app.get('/api/staff/summary-sample', requireRole('staff'), (req, res) => {
+  const rows = db.prepare(
+    `SELECT s.id, s.lang_en, s.lang_te, s.lang_hi, s.engine, s.created_at,
+            r.parameter, r.value, r.unit, r.reference_range, r.flag,
+            o.order_code, p.full_name patient_name,
+            (SELECT verdict FROM summary_reviews v WHERE v.summary_id=s.id AND v.staff_id=?) AS my_verdict
+     FROM summaries s
+     JOIN results r ON r.id=s.result_id
+     JOIN orders o ON o.id=r.order_id
+     JOIN patients p ON p.id=o.patient_id
+     WHERE s.created_at >= datetime('now','-7 days')
+     ORDER BY RANDOM() LIMIT 50`).all(req.actor.id);
+  res.json({ sample: rows });
+});
+
+app.post('/api/staff/summary-sample/:id/review', requireRole('staff'), (req, res) => {
+  const verdict = req.body?.verdict;
+  if (!['ok', 'needs_fix'].includes(verdict)) return res.status(400).json({ error: 'bad_verdict' });
+  const sum = db.prepare('SELECT id FROM summaries WHERE id=?').get(req.params.id);
+  if (!sum) return res.status(404).json({ error: 'not_found' });
+  db.prepare(`INSERT INTO summary_reviews (summary_id, staff_id, verdict) VALUES (?,?,?)
+    ON CONFLICT(summary_id, staff_id) DO UPDATE SET verdict=excluded.verdict, created_at=datetime('now')`)
+    .run(sum.id, req.actor.id, verdict);
+  logAccess('staff', req.actor.id, 'summary_quality_review', 'summary', sum.id, verdict);
+  res.json({ ok: true });
 });
 
 // ---------- staff auth + console ----------

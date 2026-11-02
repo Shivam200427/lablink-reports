@@ -126,6 +126,15 @@ CREATE TABLE IF NOT EXISTS summaries (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS summary_reviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  summary_id INTEGER NOT NULL REFERENCES summaries(id),
+  staff_id INTEGER REFERENCES staff(id),
+  verdict TEXT NOT NULL CHECK (verdict IN ('ok','needs_fix')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(summary_id, staff_id)
+);
+
 CREATE TABLE IF NOT EXISTS summary_flags (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   summary_id INTEGER NOT NULL REFERENCES summaries(id),

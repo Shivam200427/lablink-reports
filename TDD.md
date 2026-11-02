@@ -3,14 +3,14 @@
 **GitHub:** https://github.com/Shivam200427/lablink-reports (public; full source + commit history)
 **Live app:** not deployed publicly (submission constraint: no paid services; runs locally - see deployment.md for one-command setup and free-tier steps)
 
-**Product:** secure lab-report delivery for City Diagnostics ("Company A"), Vijayawada
+**Product:** secure lab-report delivery for Company A, Vijayawada ("LabLink" is a demo brand name chosen for this submission)
 **Author:** Shivam Jain, built with AI assistance (the brief encourages AI) - **Date:** 2 November 2026 - **Stack:** Node.js 22 / Express / SQLite - React 19 / Vite / Tailwind
 
 ---
 
 ## 1. Problem
 
-City Diagnostics finishes tests in its LIS, but reports reach patients late: patients travel
+Company A finishes tests in its LIS, but reports reach patients late: patients travel
 back to the lab to collect paper, call the front desk for values, or wait for a WhatsApp
 forward of a photo. The lab wants reports to reach patients on their phones the moment the
 pathologist signs off - securely, in language they understand, without the front desk
@@ -46,7 +46,7 @@ Single-process monolith, deliberately boring so a small lab can run it anywhere:
 LIS CSV -> Express API -> SQLite (13 tables)
                 |
                 +─ sign-off -> 72h secure link + WhatsApp/SMS (mocked outbox)
-                |            + template summaries (en/te/hi)
+                |            + plain-language summaries en/te/hi (AI or locked template)
                 |            + critical-value callback tasks
                 |
 React SPA <─────┘  (patient portal / staff console / doctor view / ops)
@@ -58,8 +58,8 @@ PDF reports: pdfkit, generated at sign-off and on demand
   language switcher persisted per patient.
 - **Messaging:** `server/outbox.js` writes every WhatsApp/SMS/OTP to an `outbox` table and a
   ticker simulates send/delivered status. Swapping in MSG91/Twilio is a one-file change.
-- **Tests:** vitest integration suite (`tests/api.test.js`, 14 tests) boots the real app on
-  a throwaway database.
+- **Tests:** vitest integration suites (`tests/api.test.js` + `tests/security.test.js`,
+  21 tests) boot the real app on a throwaway database.
 
 ## 5. Core flow
 
@@ -92,16 +92,26 @@ PDF reports: pdfkit, generated at sign-off and on demand
 
 ## 7. AI summary engine (and its safety rules)
 
-Out-of-range values get a plain-language sentence written by an AI model
-(`server/ai.js`), wrapped in strict guardrails; a locked template is the safe
-floor underneath it.
+Out-of-range values get a plain-language sentence (`server/ai.js`): written by
+an AI model when a provider is configured, and by the locked template otherwise.
+The template is always the safe floor underneath the AI.
 
-**Provider configuration (honest):** any OpenAI-compatible chat API works.
-`AI_API_KEY` enables it; `AI_BASE_URL` (default api.openai.com) and `AI_MODEL`
-(default gpt-4o-mini) select the provider. With no key set - as in this free
-demo - the locked templates serve every summary and the record is marked
-`engine=template`. Nothing is faked: each summary row stores whether it came
-from `ai`, `ai+template` (partial fallback) or `template`.
+**Provider configuration (honest):** any OpenAI-compatible chat API works, in
+either of two ways: `AI_API_KEY` for a paid/production provider, or
+`AI_BASE_URL` pointing at a keyless OpenAI-compatible endpoint (`AI_MODEL`
+selects the model, default gpt-4o-mini). With neither set, the locked templates
+serve every summary and rows are marked `engine=template`. Nothing is faked:
+each summary row stores whether it came from `ai`, `ai+template` (partial
+fallback) or `template`.
+
+**Tested result (this demo):** the app was run once against a free keyless
+endpoint (pollinations.ai) via `AI_BASE_URL`, from the app's own code path -
+not mocked. A real AI sentence was returned, passed validation and was stored
+(`engine=ai+template`; the Telugu/Hindi variants of that row fell back to
+templates under the free endpoint's throttling). Concurrent calls were
+throttled by the free endpoint, so generation is sequential with spacing, and
+fallback under throttling is by design. A production deployment should use a
+paid, compliant provider - none was paid for this submission.
 
 **Safety rules, enforced in code and tested:**
 
@@ -123,13 +133,22 @@ from `ai`, `ai+template` (partial fallback) or `template`.
    report, not inside every summary.
 6. **Patient can flag a summary as wrong.** Flags land in the staff console;
    staff review and resolve. The event is access-logged.
+7. **Locked templates cover the 31 most common analytes** (`server/kb.js`,
+   name-matched, with critical thresholds) - exceeding the brief's "30 most
+   common tests". Analytes outside the KB get no summary by design.
+8. **Pathologist weekly quality review:** `GET /api/staff/summary-sample`
+   returns up to **50 random summaries from the last 7 days**; the pathologist
+   records an `ok` / `needs_fix` verdict per summary (stored in
+   `summary_reviews`) from the staff console's "Weekly AI review" page. This
+   implements the brief's "a pathologist reviews 50 summaries a week".
 
 ## 8. Data model (SQLite)
 
 `patients` - `staff` - `doctors` - `orders` - `results` - `report_links` (hash, expiry) -
 `otps` (hash, attempts, expiry) - `sessions` (hash, scope, expiry) - `outbox` (mocked
 WhatsApp/SMS) - `access_log` - `summaries` (analyte, language, text, order) -
-`summary_flags` (patient flag + staff review status) - `callback_tasks` (critical value,
+`summary_flags` (patient flag + staff review status) - `summary_reviews`
+(pathologist weekly-sample verdicts) - `callback_tasks` (critical value,
 patient, status).
 
 ## 9. API surface (selected)
@@ -138,12 +157,14 @@ patient, status).
   `GET /api/patient/orders`, `GET /api/patient/orders/:id` (+ `/pdf`),
   `POST /api/patient/summaries/:id/flag`, `POST /api/patient/language`
 - Secure link: `GET /api/link/:token`, `POST /api/link/:token/request-otp`,
-  `POST /api/link/:token/verify`, `GET /api/link/:token/report`
+  `POST /api/link/:token/verify`, `GET /api/link/:token/report`,
+  `GET /api/link/:token/pdf`
 - Staff: `POST /api/auth/staff/login`, `POST /api/staff/import`,
   `POST /api/staff/orders/:id/signoff`, `POST /api/staff/orders/:id/resend-link`,
   `GET /api/staff/tasks`, `POST /api/staff/tasks/:id/done`,
   `POST /api/staff/summary-flags/:id/review`, `GET /api/staff/outbox`,
-  `GET /api/staff/access-log`, `GET /api/staff/ops-report`
+  `GET /api/staff/access-log`, `GET /api/staff/ops-report`,
+  `GET /api/staff/summary-sample`, `POST /api/staff/summary-sample/:id/review`
 - Doctor: `POST /api/auth/doctor/request-otp` (+ verify), `GET /api/doctor/reports`
 
 ## 10. Screens
@@ -154,23 +175,42 @@ patient, status).
 4. Report view: values with high/low flags, plain-language summaries, PDF download, flag-a-summary
 5. Secure-link landing + OTP (the 72-hour link path)
 6. Staff login
-7. Staff console: callback tasks, flagged summaries, patient search + resend, message outbox, access log
+7. Staff console: callback tasks, flagged summaries, patient search + resend, message outbox, access log, weekly AI-summary review
 8. Pathologist import + sign-off
 9. (depth) Doctor report list - 10. (depth) Ops report
 
 ## 11. Testing
 
-`npm test` -> 14 vitest integration tests against the real app on a temp database, covering:
-flag rules (normal/high/low/critical), summary-engine safety (critical suppressed, unknown
-suppressed, disclaimer present, three languages), patient OTP login + consent + family
-scoping, the full sign-off pipeline (link + message + summaries + callback task), secure
-link flow (expiry, OTP gate, wrong OTP attempts), staff console (resend, task completion,
-flag review), and CSV import edge cases.
+`npm test` -> **21 vitest integration tests** against the real app on a temp database:
+
+- `tests/api.test.js` (14): flag rules (normal/high/low/critical), summary-engine
+  safety (critical suppressed, unknown suppressed, disclaimer present, three
+  languages), patient OTP login + consent + family scoping, the full sign-off
+  pipeline (link + message + summaries + callback task), secure link flow
+  (expiry, OTP gate, wrong OTP attempts), staff console (resend, task
+  completion, flag review), CSV import edge cases.
+- `tests/security.test.js` (7) - the security review, executable:
+  role isolation (401 with no session, 403 with the wrong role); IDOR - a
+  patient session cannot read another mobile's order, and a link-verified
+  session is scoped to exactly one order (patient portal and other links
+  reject it); OTP brute-force lockout (5 attempts) and request rate limiting;
+  unknown link tokens return 404 with no data; an **expired** link returns 410,
+  cannot request or verify an OTP, and its report/PDF stay closed even with a
+  previously verified session; sign-off is idempotent; unauthorized PDF
+  download is rejected; the weekly sample returns at most 50 rows and records
+  reviews.
 
 ## 12. Trade-offs, assumptions and honest limitations
 
 **Assumptions the lab must review before any real use:**
 
+- **Family number means household access:** the OTP verifies possession of the
+  family phone, **not the individual patient**. Anyone holding that phone
+  during the OTP window can open every patient registered to that number, so
+  the brief's "no report opened by the wrong person" is enforced at the
+  phone-number level, not inside a household. Mitigations in place: per-report
+  OTP on secure links, 72-hour link expiry, and a full access log. A stricter
+  option (per-patient numbers) is a product decision the lab must own.
 - **Sample critical thresholds:** the critical limits in `server/kb.js` (e.g.
   potassium, haemoglobin) are SAMPLE values chosen to exercise the critical
   flow. They are NOT clinically approved - the pathologist must review and set
@@ -188,9 +228,11 @@ flag review), and CSV import edge cases.
 - **Mocked messaging:** no real SMS/WhatsApp leaves the box (submission budget:
   no paid services). The outbox proves the full pipeline; a provider plugs into
   `server/outbox.js`. OTPs are read from the server log/outbox in the demo.
-- **AI needs a provider key in production:** without `AI_API_KEY` the locked
-  templates carry the summaries (fully tested); with a key, the AI path plus
-  validation takes over. No provider was paid for this submission.
+- **AI provider:** the demo runs free on locked templates by default and was
+  also proven against a keyless free endpoint (`AI_BASE_URL`) with a real,
+  validated AI sentence stored; under the free endpoint's throttling the
+  fallback took over, by design. Production should use a paid, compliant
+  provider via `AI_API_KEY` - no provider was paid for this submission.
 - **India data residency:** the demo host options in deployment.md are free
   tiers outside India. A real deployment for Indian patient data should use an
   India-region host (e.g. AWS Mumbai / Azure Central India); this submission

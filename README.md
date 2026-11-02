@@ -1,4 +1,6 @@
-# LabLink - Lab Report Delivery for City Diagnostics, Vijayawada
+# LabLink - Lab Report Delivery for Company A, Vijayawada
+
+("LabLink" is a demo brand name chosen for this submission; the client is "Company A" per the brief.)
 
 LabLink lets a small diagnostic lab deliver signed-off reports to patients on their phones:
 the LIS uploads a CSV, the pathologist signs off an order, and the patient gets a secure
@@ -13,9 +15,9 @@ callback task for the front desk instead. One mobile number can cover a whole fa
 - React 19 + Vite + Tailwind CSS 3 (mobile-first, large text, low-end phone friendly)
 - pdfkit for report PDFs, vitest for tests
 - All messaging (WhatsApp/SMS/OTP) is mocked into an `outbox` table - no paid services
-- Plain-language summaries use an AI provider when `AI_API_KEY` is set
-  (OpenAI-compatible); every AI sentence is validated and falls back to locked
-  templates, which is how the free demo runs
+- Plain-language summaries use an AI provider when configured (`AI_API_KEY`, or a
+  keyless `AI_BASE_URL` endpoint); every AI sentence is validated and falls back
+  to locked templates, which is how the free demo runs by default
 
 ## Quick start
 
@@ -44,8 +46,9 @@ then sign off the new orders and watch the outbox (staff console > Messages).
 ## Tests
 
 ```bash
-npm test     # 14 integration tests: flag rules, summary safety, OTP/consent/family,
-             # sign-off pipeline, secure links, staff console, CSV import
+npm test     # 21 integration tests: flag rules, summary safety, OTP/consent/family,
+             # sign-off pipeline, secure links, staff console, CSV import,
+             # + security suite (roles, IDOR, OTP lockout, link expiry, PDF access)
 ```
 
 ## Layout
