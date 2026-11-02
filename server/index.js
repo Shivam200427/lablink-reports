@@ -8,6 +8,8 @@ import { all, get, run, insert, initDB, logAccess } from './db.js';
 import { requestOTP, verifyOTP, createSession, getSession } from './otp.js';
 import { hashPassword, verifyPassword, now, randomToken, sha256, addHours } from './crypto.js';
 import { importCSV, signOffOrder } from './lis.js';
+import { flagResult } from './flags.js';
+import { findKBEntry } from './kb.js';
 import { tickOutbox, resendMessage, queueMessage } from './outbox.js';
 import { generateSummariesForOrder } from './summary.js';
 import { generateReportPDF } from './pdf.js';
@@ -60,6 +62,34 @@ app.post('/api/auth/patient/request-otp', async (req, res) => {
     await logAccess('anonymous', null, 'otp_unknown_mobile', 'mobile', null, mask(mobile));
     return res.status(404).json({ error: 'not_registered' });
   }
+  const r = await requestOTP(mobile, 'login');
+  if (r.error) return res.status(429).json(r);
+  res.json({ ok: true });
+});
+
+// Self-registration for patients whose number is not yet known. Creates an
+// EMPTY patient record - no reports are attached at registration. Reports only
+// ever arrive via the lab's own LIS CSV import. Import linkage is
+// provenance-aware (see lis.js): mobile+name rows may converge with a
+// self-registered record (holding that phone was OTP-verified), but name-only
+// rows attach to lab-created patients only - a self-asserted name alone can
+// never pull in someone else's report. Numbers already known (registered at a
+// lab/collection centre) are told to log in instead.
+app.post('/api/auth/patient/register', async (req, res) => {
+  const mobile = String(req.body.mobile || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+  const fullName = String(req.body.fullName || '').trim();
+  const language = String(req.body.language || 'en');
+  if (!/^\d{10}$/.test(mobile)) return res.status(400).json({ error: 'invalid_mobile' });
+  if (fullName.length < 2 || fullName.length > 80) return res.status(400).json({ error: 'invalid_name' });
+  if (!['en', 'te', 'hi'].includes(language)) return res.status(400).json({ error: 'bad_lang' });
+  const known = (await get('SELECT COUNT(*) c FROM patients WHERE mobile=?', [mobile])).c > 0;
+  if (known) return res.status(409).json({ error: 'already_registered' });
+  const age = req.body.age == null || req.body.age === '' ? null : parseInt(req.body.age, 10);
+  if (age != null && (!Number.isInteger(age) || age < 0 || age > 120)) return res.status(400).json({ error: 'invalid_age' });
+  let sex = String(req.body.sex || '').trim().toUpperCase();
+  if (!['M', 'F', 'O'].includes(sex)) sex = null;
+  (await run("INSERT INTO patients (full_name, age, sex, mobile, preferred_language, created_via) VALUES (?,?,?,?,?,'self')", [fullName, age, sex, mobile, language]));
+  await logAccess('patient', null, 'patient_register', 'mobile', null, mask(mobile));
   const r = await requestOTP(mobile, 'login');
   if (r.error) return res.status(429).json(r);
   res.json({ ok: true });
@@ -306,6 +336,56 @@ app.post('/api/staff/import', requireRole('staff'), upload.single('file'), async
   if (!req.file) return res.status(400).json({ error: 'no_file' });
   const report = await importCSV(req.file.buffer.toString('utf8'), req.actor);
   res.json(report);
+});
+
+// Manual front-desk entry: register a walk-in patient + order without the LIS
+// CSV (same identity semantics as the import - staff entry is lab-asserted).
+// The order lands in processing; the pathologist reviews and signs as usual.
+app.post('/api/staff/orders', requireRole('staff'), async (req, res) => {
+  const b = req.body || {};
+  const fullName = String(b.patientName || '').trim();
+  const mobile = String(b.mobile || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+  const doctorName = String(b.doctorName || '').trim();
+  const age = b.age == null || b.age === '' ? null : parseInt(b.age, 10);
+  let sex = String(b.sex || '').trim().toUpperCase();
+  if (!['M', 'F', 'O'].includes(sex)) sex = null;
+  const results = Array.isArray(b.results) ? b.results : [];
+  if (fullName.length < 2 || fullName.length > 80) return res.status(400).json({ error: 'invalid_name' });
+  if (!/^\d{10}$/.test(mobile)) return res.status(400).json({ error: 'invalid_mobile' });
+  if (age != null && (!Number.isInteger(age) || age < 0 || age > 120)) return res.status(400).json({ error: 'invalid_age' });
+  if (!results.length || results.length > 20) return res.status(400).json({ error: 'no_results' });
+  for (const r of results) {
+    const p = String(r?.parameter || '').trim();
+    const v = String(r?.value ?? '').trim();
+    if (p.length < 2 || p.length > 80 || !v || v.length > 40) return res.status(400).json({ error: 'invalid_result' });
+  }
+  let patient = (await get("SELECT * FROM patients WHERE mobile=? AND lower(trim(full_name))=lower(trim(?)) ORDER BY (created_via='lis') DESC LIMIT 1", [mobile, fullName]));
+  if (patient && patient.created_via === 'self') {
+    (await run("UPDATE patients SET created_via='lis' WHERE id=?", [patient.id]));
+    await logAccess('staff', req.actor.id, 'patient_merged', 'patient', patient.id, `self-registered ${fullName} confirmed by front-desk entry`);
+  }
+  if (!patient) {
+    const pid = await insert('INSERT INTO patients (full_name, age, sex, mobile) VALUES (?,?,?,?)', [fullName, age, sex, mobile]);
+    patient = (await get('SELECT * FROM patients WHERE id=?', [pid]));
+  }
+  let doctorId = null;
+  if (doctorName) {
+    let d = (await get('SELECT * FROM doctors WHERE full_name=?', [doctorName]));
+    if (!d) { const did = await insert('INSERT INTO doctors (full_name) VALUES (?)', [doctorName]); d = (await get('SELECT * FROM doctors WHERE id=?', [did])); }
+    doctorId = d.id;
+  }
+  const codes = (await all('SELECT order_code FROM orders')).map((r) => parseInt(String(r.order_code).replace(/^ORD-/, ''), 10)).filter((n) => !isNaN(n));
+  const orderCode = `ORD-${Math.max(71200, ...codes) + 1}`;
+  const oid = await insert('INSERT INTO orders (order_code, patient_id, doctor_id, status) VALUES (?,?,?,?)', [orderCode, patient.id, doctorId, 'processing']);
+  for (const r of results) {
+    const parameter = String(r.parameter).trim();
+    const range = String(r.referenceRange || '').trim() || null;
+    const unit = String(r.unit || '').trim() || null;
+    const value = String(r.value).trim();
+    (await run('INSERT INTO results (order_id, parameter, unit, value, reference_range, flag) VALUES (?,?,?,?,?,?)', [oid, parameter, unit, value, range, flagResult(value, range, findKBEntry(parameter))]));
+  }
+  await logAccess('staff', req.actor.id, 'order_created', 'order', oid, `${orderCode} manual front-desk entry for ${fullName}`);
+  res.json({ ok: true, orderId: oid, orderCode, patientId: patient.id });
 });
 
 app.get('/api/staff/orders', requireRole('staff'), async (req, res) => {

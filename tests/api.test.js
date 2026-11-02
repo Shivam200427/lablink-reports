@@ -197,3 +197,163 @@ describe('csv import flags', () => {
     expect(flags).toEqual(['high', 'critical']);
   });
 });
+
+describe('patient self-registration', () => {
+  it('registers a new patient with an empty record, OTP login, consent, no reports', async () => {
+    const a = agent();
+    const reg = await a.post('/api/auth/patient/register').send({ fullName: 'Self Registered', mobile: '9800000077', language: 'te', age: 45, sex: 'F' });
+    expect(reg.status).toBe(200);
+    const code = await lastOTP('9800000077');
+    const v = await a.post('/api/auth/patient/verify').send({ mobile: '9800000077', code, consent: true });
+    expect(v.status).toBe(200);
+    const orders = await a.get('/api/patient/orders');
+    expect(orders.status).toBe(200);
+    expect(orders.body.orders).toEqual([]);
+    const me = await a.get('/api/patient/me');
+    expect(me.status).toBe(200);
+  });
+
+  it('rejects duplicate registration, invalid mobile and missing name', async () => {
+    const a = agent();
+    const dup = await a.post('/api/auth/patient/register').send({ fullName: 'Test Patient Clone', mobile: '9800000001', language: 'en' });
+    expect(dup.status).toBe(409);
+    expect(dup.body.error).toBe('already_registered');
+    const badM = await a.post('/api/auth/patient/register').send({ fullName: 'X Y', mobile: '123', language: 'en' });
+    expect(badM.status).toBe(400);
+    const badN = await a.post('/api/auth/patient/register').send({ fullName: 'x', mobile: '9800000078', language: 'en' });
+    expect(badN.status).toBe(400);
+  });
+
+  it('attaches LIS-imported results to a self-registered patient only via the lab CSV (mobile + name match)', async () => {
+    const a = agent();
+    await a.post('/api/auth/patient/register').send({ fullName: 'Merge Case', mobile: '9800000079', language: 'en' });
+    const r = await importCSV('Order ID,Patient,Mobile,Parameter,Result,Reference Range,Status,Referring Doctor\nORD-T9,Merge Case,9800000079,LDL Cholesterol,142,0-100,Processing,Dr. Test\n');
+    expect(r.newOrders).toBe(1);
+    expect(r.newPatients).toBe(0); // merged into the self-registered record, not duplicated
+    const code = await lastOTP('9800000079');
+    await a.post('/api/auth/patient/verify').send({ mobile: '9800000079', code, consent: true });
+    const orders = await a.get('/api/patient/orders');
+    expect(orders.body.orders.map(o => o.order_code)).toContain('ORD-T9');
+  });
+
+  it('never attaches name-only LIS rows (export without mobile) to a self-registered identity', async () => {
+    const a = agent();
+    await a.post('/api/auth/patient/register').send({ fullName: 'Impersonation Target', mobile: '9800000080', language: 'en' });
+    // attacker registers under a victim's exact name on their own phone;
+    // a mobile-less LIS export row for that name arrives
+    const r = await importCSV('Order ID,Patient,Parameter,Result,Reference Range,Status,Referring Doctor\nORD-T10,Impersonation Target,Potassium,6.8,3.5-5.1,Processing,Dr. Test\n');
+    expect(r.newOrders).toBe(1);
+    expect(r.newPatients).toBe(1); // new lab-created patient, NOT the self-registered one
+    const code = await lastOTP('9800000080');
+    await a.post('/api/auth/patient/verify').send({ mobile: '9800000080', code, consent: true });
+    const orders = await a.get('/api/patient/orders');
+    expect(orders.body.orders).toEqual([]); // self-registered identity sees nothing
+  });
+
+  it('keeps a same-mobile different-name import as a separate lab patient', async () => {
+    const a = agent();
+    await a.post('/api/auth/patient/register').send({ fullName: 'Household Self', mobile: '9800000081', language: 'en' });
+    const r = await importCSV('Order ID,Patient,Mobile,Parameter,Result,Reference Range,Status,Referring Doctor\nORD-T11,Household Other,9800000081,Haemoglobin,10.2,12.0-15.5,Processing,Dr. Test\n');
+    expect(r.newPatients).toBe(1); // no silent identity merge
+    const me = await (async () => { const code = await lastOTP('9800000081'); await a.post('/api/auth/patient/verify').send({ mobile: '9800000081', code, consent: true }); return a.get('/api/patient/me'); })();
+    const names = me.body.patients.map(p => p.full_name).sort();
+    expect(names).toEqual(['Household Other', 'Household Self']); // two records, family picker
+  });
+
+  it('converges repeated name-only imports on one lab patient, and a verified merge accepts later name-only rows', async () => {
+    const a = agent();
+    await a.post('/api/auth/patient/register').send({ fullName: 'Converge Case', mobile: '9800000082', language: 'en' });
+    const h = 'Order ID,Patient,Parameter,Result,Reference Range,Status,Referring Doctor\n';
+    // name-only rows before any lab-verified identity: separate lab patient
+    const r1 = await importCSV(h + 'ORD-T12,Converge Case,LDL Cholesterol,142,0-100,Processing,Dr. Test\n');
+    expect(r1.newPatients).toBe(1);
+    // repeat name-only import: same lab patient, no duplicate
+    const r2 = await importCSV(h + 'ORD-T13,Converge Case,HDL Cholesterol,60,40-80,Processing,Dr. Test\n');
+    expect(r2.newPatients).toBe(0);
+    // mobile+name import: converges with the self-registered record (lab vouches)
+    const r3 = await importCSV('Order ID,Patient,Mobile,Parameter,Result,Reference Range,Status,Referring Doctor\nORD-T14,Converge Case,9800000082,Haemoglobin,13.0,12.0-15.5,Processing,Dr. Test\n');
+    expect(r3.newPatients).toBe(0);
+    const code = await lastOTP('9800000082');
+    await a.post('/api/auth/patient/verify').send({ mobile: '9800000082', code, consent: true });
+    const orders = await a.get('/api/patient/orders');
+    const codes = orders.body.orders.map(o => o.order_code);
+    expect(codes).toContain('ORD-T14'); // merged order visible
+    expect(codes).not.toContain('ORD-T12'); // name-only rows stayed with the separate lab patient
+    expect(codes).not.toContain('ORD-T13');
+  });
+
+  it('holds a name-only row when two lab patients share the name, and explains the fix to staff', async () => {
+    const h = 'Order ID,Patient,Mobile,Parameter,Result,Reference Range,Status,Referring Doctor\n';
+    // two DISTINCT lab patients named 'Duplicate Name' on different mobiles
+    await importCSV(h + 'ORD-T15,Duplicate Name,9800000083,Haemoglobin,13.0,12.0-15.5,Processing,Dr. Test\n');
+    await importCSV(h + 'ORD-T16,Duplicate Name,9800000084,Haemoglobin,14.0,12.0-15.5,Processing,Dr. Test\n');
+    // a name-only export row cannot be safely attributed
+    const r = await importCSV('Order ID,Patient,Parameter,Result,Reference Range,Status,Referring Doctor\nORD-T17,Duplicate Name,Potassium,4.0,3.5-5.1,Processing,Dr. Test\n');
+    expect(r.newOrders).toBe(0);
+    expect(r.errors.join(' ')).toMatch(/ambiguous patient name 'Duplicate Name' \(2 lab records share it\).*include Mobile/);
+    // a name-only row for an unambiguous lab patient still attaches
+    const r2 = await importCSV('Order ID,Patient,Parameter,Result,Reference Range,Status,Referring Doctor\nORD-T18,Duplicate Name Unique,Potassium,4.0,3.5-5.1,Processing,Dr. Test\n');
+    expect(r2.newOrders).toBe(1);
+    expect(r2.newPatients).toBe(1);
+    const r3 = await importCSV('Order ID,Patient,Parameter,Result,Reference Range,Status,Referring Doctor\nORD-T19,Duplicate Name Unique,HDL Cholesterol,60,40-80,Processing,Dr. Test\n');
+    expect(r3.newOrders).toBe(1);
+    expect(r3.newPatients).toBe(0);
+  });
+});
+
+describe('manual front-desk order entry', () => {
+  async function staffLogin(a) {
+    await a.post('/api/auth/staff/login').send({ username: 'desk', password: 'pw123' });
+  }
+  it('creates a walk-in order for a fresh patient; sign-off delivers to the OTP portal', async () => {
+    const a = agent();
+    await staffLogin(a);
+    const r = await a.post('/api/staff/orders').send({
+      patientName: 'Walk In Patient', mobile: '9800000090', age: 52, sex: 'M',
+      doctorName: 'Dr. Test',
+      results: [{ parameter: 'Haemoglobin', value: '9.8', unit: 'g/dL', referenceRange: '12.0-15.5' }],
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.orderCode).toMatch(/^ORD-\d+$/);
+    // order is processing with a flagged result, visible on the sign-off list
+    const list = await a.get('/api/staff/orders?status=processing');
+    const row = list.body.orders.find((o) => o.order_code === r.body.orderCode);
+    expect(row).toBeTruthy();
+    expect(row.flagged).toBe(1);
+    // pathologist signs -> link + message; patient logs in with OTP and sees it
+    const so = await a.post(`/api/staff/orders/${r.body.orderId}/signoff`).send({});
+    expect(so.body.ok).toBe(true);
+    const p = agent();
+    await patientLogin(p, '9800000090');
+    const orders = await p.get('/api/patient/orders');
+    expect(orders.body.orders.map((o) => o.order_code)).toContain(r.body.orderCode);
+  });
+
+  it('converges with a self-registered patient on mobile+name (lab-asserted entry)', async () => {
+    const p = agent();
+    await p.post('/api/auth/patient/register').send({ fullName: 'Desk Merge', mobile: '9800000091', language: 'en' });
+    const a = agent();
+    await staffLogin(a);
+    const r = await a.post('/api/staff/orders').send({
+      patientName: 'Desk Merge', mobile: '9800000091',
+      results: [{ parameter: 'LDL Cholesterol', value: '142', referenceRange: '0-100' }],
+    });
+    expect(r.status).toBe(200);
+    const code = await lastOTP('9800000091');
+    await p.post('/api/auth/patient/verify').send({ mobile: '9800000091', code, consent: true });
+    const orders = await p.get('/api/patient/orders');
+    expect(orders.body.orders.map((o) => o.order_code)).toContain(r.body.orderCode);
+  });
+
+  it('validates input and enforces the staff role', async () => {
+    const a = agent();
+    expect((await a.post('/api/staff/orders').send({ patientName: 'X Y', mobile: '9800000092', results: [{ parameter: 'Hb', value: '10' }] })).status).toBe(401);
+    await staffLogin(a);
+    expect((await a.post('/api/staff/orders').send({ patientName: 'X Y', mobile: '123', results: [{ parameter: 'Hb', value: '10' }] })).status).toBe(400);
+    expect((await a.post('/api/staff/orders').send({ patientName: 'X Y', mobile: '9800000092', results: [] })).status).toBe(400);
+    expect((await a.post('/api/staff/orders').send({ patientName: 'X', mobile: '9800000092', results: [{ parameter: 'Hb', value: '10' }] })).status).toBe(400);
+    const p = agent();
+    await patientLogin(p, '9800000090'); // walk-in patient from the first test (known, consented)
+    expect((await p.post('/api/staff/orders').send({ patientName: 'X Y', mobile: '9800000092', results: [{ parameter: 'Hb', value: '10' }] })).status).toBe(403);
+  });
+});

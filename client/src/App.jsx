@@ -1,12 +1,14 @@
 import React from 'react';
 import { Routes, Route, Link, useNavigate } from 'react-router-dom';
 import PatientLogin from './pages/PatientLogin.jsx';
+import PatientRegister from './pages/PatientRegister.jsx';
 import PatientHome from './pages/PatientHome.jsx';
 import ReportView from './pages/ReportView.jsx';
 import LinkGate from './pages/LinkGate.jsx';
 import StaffLogin from './pages/StaffLogin.jsx';
 import StaffConsole from './pages/StaffConsole.jsx';
 import StaffImport from './pages/StaffImport.jsx';
+import StaffNewOrder from './pages/StaffNewOrder.jsx';
 import StaffTasks from './pages/StaffTasks.jsx';
 import StaffSample from './pages/StaffSample.jsx';
 import OpsReport from './pages/OpsReport.jsx';
@@ -48,12 +50,14 @@ export default function App() {
       <div className="mx-auto min-h-screen max-w-2xl px-4 py-6">
         <Routes>
           <Route path="/" element={<PatientLogin />} />
+          <Route path="/register" element={<PatientRegister />} />
           <Route path="/home" element={<PatientHome />} />
           <Route path="/orders/:id" element={<ReportView />} />
           <Route path="/r/:token" element={<LinkGate />} />
           <Route path="/staff" element={<StaffLogin />} />
           <Route path="/staff/console" element={<StaffConsole />} />
           <Route path="/staff/import" element={<StaffImport />} />
+          <Route path="/staff/new-order" element={<StaffNewOrder />} />
           <Route path="/staff/tasks" element={<StaffTasks />} />
           <Route path="/staff/sample" element={<StaffSample />} />
           <Route path="/staff/ops" element={<OpsReport />} />

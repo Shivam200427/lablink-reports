@@ -1,10 +1,11 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../api.js';
 import { t } from '../i18n.js';
 import { BrandHeader, LangPicker, LangCtx } from '../App.jsx';
 
 export default function PatientHome() {
+  const justRegistered = useLocation().state?.justRegistered;
   const { lang, setLang } = React.useContext(LangCtx);
   const nav = useNavigate();
   const [me, setMe] = React.useState(null);
@@ -49,7 +50,7 @@ export default function PatientHome() {
             )}
           </div>
           <h3 className="mb-3 text-lg font-semibold text-slate-600">{t(lang, 'yourReports')}</h3>
-          {visible.length === 0 && <div className="card text-lg text-slate-500">{t(lang, 'noReports')}</div>}
+          {visible.length === 0 && <div className="card text-lg text-slate-500">{t(lang, justRegistered ? 'registeredEmpty' : 'noReports')}</div>}
           <div className="space-y-3">
             {visible.map((o) => (
               <Link key={o.id} to={`/orders/${o.id}`}

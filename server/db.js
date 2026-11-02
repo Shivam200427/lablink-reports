@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS patients (
   sex TEXT CHECK (sex IN ('M','F','O')),
   mobile TEXT NOT NULL,
   preferred_language TEXT NOT NULL DEFAULT 'en' CHECK (preferred_language IN ('en','te','hi')),
+  created_via TEXT NOT NULL DEFAULT 'lis' CHECK (created_via IN ('lis','self')),
   consent_given_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -189,12 +190,16 @@ export async function initDB() {
     const ssl = /\.render\.com/.test(process.env.DATABASE_URL) ? { rejectUnauthorized: false } : undefined;
     pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl });
     await pool.query(DDL_PG);
+    // migration for databases created before created_via existed
+    await pool.query("ALTER TABLE patients ADD COLUMN IF NOT EXISTS created_via TEXT NOT NULL DEFAULT 'lis'");
   } else {
     const { default: Database } = await import('better-sqlite3');
     sdb = new Database(path.join(DATA_DIR, 'lablink.db'));
     sdb.pragma('journal_mode = WAL');
     sdb.pragma('foreign_keys = ON');
     sdb.exec(DDL);
+    try { sdb.exec("ALTER TABLE patients ADD COLUMN created_via TEXT NOT NULL DEFAULT 'lis'"); }
+    catch (e) { if (!/duplicate column/i.test(e.message)) throw e; }
     db = sdb;
   }
 }

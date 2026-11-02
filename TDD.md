@@ -29,7 +29,7 @@ becoming a bottleneck.
 ## 3. Scope
 
 **In scope (core build):** LIS CSV import; automatic secure report link on sign-off; patient
-OTP portal with report view; plain-language summaries of out-of-range values (English,
+self-registration + OTP portal with report view; plain-language summaries of out-of-range values (English,
 Telugu, Hindi); front-desk resend; critical-value callback tasks; patient summary flagging;
 72-hour link expiry; DPDP consent and access logs; family numbers (one mobile, many patients).
 
@@ -58,22 +58,37 @@ PDF reports: pdfkit, generated at sign-off and on demand
   language switcher persisted per patient.
 - **Messaging:** `server/outbox.js` writes every WhatsApp/SMS/OTP to an `outbox` table and a
   ticker simulates send/delivered status. Swapping in MSG91/Twilio is a one-file change.
-- **Tests:** 24 vitest integration tests (`tests/`: api, security, resilience) boot the
+- **Tests:** 34 vitest integration tests (`tests/`: api, security, resilience) boot the
   real app on a throwaway database.
 
 ## 5. Core flow
 
-1. **Import:** pathologist uploads the LIS CSV (`sample-data/lis-export.csv`). Rows are
-   grouped by Order ID; patients are matched/created by mobile number, so a family sharing
+1. **Import:** pathologist uploads the LIS CSV (`sample-data/lis-export.csv`), or the front
+   desk registers a walk-in patient directly in the console (no CSV needed - the order
+   lands in the same sign-off queue). Rows are grouped by Order ID; patients are
+   matched/created by mobile + name (one record per family member), so a family sharing
    one phone number lands under one login.
 2. **Sign-off:** the pathologist reviews values and signs. `signOffOrder()` then, in one
    transaction: flips order status, generates the report PDF, creates a **72-hour secure
    link**, queues the WhatsApp/SMS message, generates **plain-language summaries** for every
    out-of-range result in the patient's language, and creates a **callback task** for every
    critical value.
-3. **Delivery:** patient taps the link -> sees which report it is -> requests OTP -> OTP goes
+3. **Registration (two enrolment paths, both OTP-verified):** the lab-first path - the LIS
+   import creates the patient and the first OTP login enrols them. The self-service path -
+   a **Register** link on the login page (name, mobile, language, OTP). Self-registration
+   creates an *empty* patient record (`created_via=self`) and a mobile the lab already
+   knows is told to log in instead. Reports reach any account only through lab-asserted
+   entry (the LIS import or the front-desk walk-in form), and the linkage is provenance-aware: an export row with **mobile + name**
+   may converge with a self-registered record (holding that phone was OTP-verified; the
+   lab's export now vouches for the pairing, so the record becomes lab-verified), while a
+   **name-only** row attaches to lab-created patients only, and only when exactly one
+   patient matches - an ambiguous name is held with a staff-facing error asking for a
+   Mobile column rather than guessing between same-named patients. A self-asserted name
+   alone can never pull in someone else's report. DPDP consent is captured at registration on both
+   paths.
+4. **Delivery:** patient taps the link -> sees which report it is -> requests OTP -> OTP goes
    to the registered mobile (mocked) -> report opens.
-4. **After:** patient reads values + summaries, downloads the PDF, and can flag any summary
+5. **After:** patient reads values + summaries, downloads the PDF, and can flag any summary
    as wrong. Front desk sees flagged summaries and the critical-callback queue, and can
    resend the link (new link, new 72-hour window) when a patient calls.
 
@@ -85,7 +100,8 @@ PDF reports: pdfkit, generated at sign-off and on demand
 | OTP | 6 digits, 10-minute validity, SHA-256 hashed at rest, single-use (consumed on success), max **5 attempts** per code, and **3 requests per 10 minutes per mobile** to stop brute force and spam. |
 | Sessions | Random bearer tokens, hashed at rest, 12-hour expiry, scoped (a link-verified session can only read that one order). |
 | Family numbers | One mobile maps to many patients; after OTP the user picks "whose reports". A patient session sees only patients on that number. |
-| Consent (DPDP) | First login shows a consent notice (data used only to deliver lab reports, contact the lab to delete); acceptance is recorded with timestamp before any data is shown. |
+| Self-registration | OTP proves phone possession, not identity. A self-registered record is empty and marked `created_via=self`; Lab-asserted rows (LIS import or front-desk entry) attach on mobile+name match (record upgraded to lab-verified, access-logged); name-only LIS rows never attach to it. A mobile already known to the lab cannot self-register (409). Ambiguous name-only rows (two lab patients with the same name) are held with an error, never guessed. |
+| Consent (DPDP) | Captured at **registration** on both enrolment paths: self-registration shows the consent notice after OTP verify, and lab-enrolled patients (created by LIS import) see it at first login. Acceptance (data used only to deliver lab reports, contact the lab to delete) is recorded with timestamp before any data is shown. |
 | Access log | Every report view, OTP event, resend, flag and sign-off writes an `access_log` row (actor, action, subject, time) - the lab can show who saw what, when. |
 | Critical values | Never summarised, and the message for a critical report tells the patient the lab will call. A callback task is created so no critical result is silently delivered. |
 | Secrets in repo | None. Synthetic demo data only; staff passwords are scrypt-hashed; salt is an env var. |
@@ -176,7 +192,7 @@ patient, status).
 - Secure link: `GET /api/link/:token`, `POST /api/link/:token/request-otp`,
   `POST /api/link/:token/verify`, `GET /api/link/:token/report`,
   `GET /api/link/:token/pdf`
-- Staff: `POST /api/auth/staff/login`, `POST /api/staff/import`,
+- Staff: `POST /api/auth/staff/login`, `POST /api/staff/orders` (walk-in entry), `POST /api/staff/import`,
   `GET /api/staff/orders?status=` (orders with public codes for the sign-off list),
   `POST /api/staff/orders/:id/signoff`, `POST /api/staff/orders/:id/resend-link`,
   `GET /api/staff/tasks`, `POST /api/staff/tasks/:id/done`,
@@ -187,17 +203,19 @@ patient, status).
 
 ## 10. Screens
 
-1. Patient login (mobile + OTP) with DPDP consent on first use
-2. Family picker ("whose reports?") when one number covers several patients
-3. Patient report list
-4. Report view: values with high/low flags, plain-language summaries, PDF download, flag-a-summary
-5. Secure-link landing + OTP (the 72-hour link path)
-6. Staff login
-7. Staff console: patient search + resend
-8. Staff message outbox: every mocked WhatsApp/SMS/OTP with delivery status, filterable by mobile and kind
-9. Staff tasks (critical callbacks + flagged summaries), weekly AI-summary review
-10. Pathologist import + sign-off: processing orders listed by public order code (ORD-xxxxx) with flag status - no internal ids
-11. (depth) Doctor report list - 12. (depth) Ops report
+1. Patient self-registration (name, mobile, language, OTP + DPDP consent), linked from login
+2. Patient login (mobile + OTP) with DPDP consent on first use
+3. Family picker ("whose reports?") when one number covers several patients
+4. Patient report list
+5. Report view: values with high/low flags, plain-language summaries, PDF download, flag-a-summary
+6. Secure-link landing + OTP (the 72-hour link path)
+7. Staff login
+8. Staff console: patient search + resend
+9. Front-desk walk-in order entry (patient + test results, no CSV)
+10. Staff message outbox: every mocked WhatsApp/SMS/OTP with delivery status, filterable by mobile and kind
+11. Staff tasks (critical callbacks + flagged summaries), weekly AI-summary review
+12. Pathologist import + sign-off: processing orders listed by public order code (ORD-xxxxx) with flag status - no internal ids
+13. (depth) Doctor report list - 14. (depth) Ops report
 
 **Ops metric definitions:** the report counts only `report_ready` notifications (the WhatsApp/SMS carrying the report link). *Links sent* reconciles exactly: `links_sent = delivered + failed + in_flight` (asserted by test). OTP messages are counted separately so the two populations never mix. Report views and PDF downloads come from `access_log`.
 
@@ -209,14 +227,19 @@ patient, status).
 
 ## 12. Testing
 
-`npm test` -> **24 vitest integration tests** against the real app on a temp database:
+`npm test` -> **34 vitest integration tests** against the real app on a temp database:
 
-- `tests/api.test.js` (14): flag rules (normal/high/low/critical), summary-engine
+- `tests/api.test.js` (21): flag rules (normal/high/low/critical), summary-engine
   safety (critical suppressed, unknown suppressed, disclaimer present, three
-  languages), patient OTP login + consent + family scoping, the full sign-off
+  languages), patient OTP login + consent + family scoping, patient self-registration (new
+  mobile registers empty, existing mobile is told to log in, OTP verify enrols) and its
+  identity-linkage boundaries (name-only import never attaches to a self-registered
+  identity, same-mobile different-name import stays a separate patient, mobile+name
+  import converges, ambiguous name-only rows are held with a staff-facing error), the full sign-off
   pipeline (link + message + summaries + callback task), secure link flow
   (expiry, OTP gate, wrong OTP attempts), staff console (resend, task
-  completion, flag review), CSV import edge cases.
+  completion, flag review), CSV import edge cases, manual front-desk order entry (create -> sign-off ->
+  patient portal delivery, self-registered convergence, role + input validation).
 - `tests/resilience.test.js` (3) - a hanging provider still falls back fast, a silent server hits the hard timeout, and the seed skips a populated database.
 - `tests/security.test.js` (7) - the security review, executable:
   role isolation (401 with no session, 403 with the wrong role); IDOR - a

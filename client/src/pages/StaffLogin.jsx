@@ -6,7 +6,7 @@ import { BrandHeader } from '../App.jsx';
 export function StaffNav() {
   return (
     <nav className="mb-5 flex flex-wrap gap-2 text-base">
-      {[['Console', '/staff/console'], ['Import & sign-off', '/staff/import'], ['Tasks', '/staff/tasks'], ['Messages', '/staff/messages'], ['Summary sample', '/staff/sample'], ['Ops report', '/staff/ops']].map(([l, p]) => (
+      {[['Console', '/staff/console'], ['New order', '/staff/new-order'], ['Import & sign-off', '/staff/import'], ['Tasks', '/staff/tasks'], ['Messages', '/staff/messages'], ['Summary sample', '/staff/sample'], ['Ops report', '/staff/ops']].map(([l, p]) => (
         <a key={p} href={p} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-brand-600">{l}</a>
       ))}
     </nav>

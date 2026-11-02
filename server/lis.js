@@ -36,9 +36,32 @@ export async function importCSV(text, actor = { type: 'staff', id: null }) {
       }
       report.ordersTouched.add(orderCode);
 
-      let patient = mobile
-        ? (await get('SELECT * FROM patients WHERE mobile=? AND full_name=?', [mobile, patientName]))
-        : (await get('SELECT * FROM patients WHERE full_name=?', [patientName]));
+      // Identity linkage: OTP proves phone possession, not identity, so a
+      // self-registered patient only merges with lab data when the LIS export
+      // asserts the SAME mobile + name (that pairing already requires holding
+      // the phone). Name-only rows (exports without a mobile) may attach to
+      // lab-created patients only - never to a self-asserted identity.
+      // Name-only rows must never guess between same-named lab patients:
+      // an ambiguous name holds the row with a staff-facing error asking for
+      // a Mobile column, instead of silently attaching to the first match.
+      let patient;
+      if (mobile) {
+        patient = (await get("SELECT * FROM patients WHERE mobile=? AND lower(trim(full_name))=lower(trim(?)) ORDER BY (created_via='lis') DESC LIMIT 1", [mobile, patientName]));
+      } else {
+        const named = (await all("SELECT * FROM patients WHERE created_via='lis' AND lower(trim(full_name))=lower(trim(?))", [patientName]));
+        if (named.length > 1) {
+          report.errors.push(`row ${i + 2}: ambiguous patient name '${patientName}' (${named.length} lab records share it) - row held; include Mobile in the export to identify the patient`);
+          continue;
+        }
+        patient = named[0];
+      }
+      if (patient && patient.created_via === 'self') {
+        // the lab's LIS now vouches for this mobile+name pairing: the
+        // self-registered record becomes lab-verified
+        (await run("UPDATE patients SET created_via='lis' WHERE id=?", [patient.id]));
+        patient.created_via = 'lis';
+        await logAccess(actor.type, actor.id, 'patient_merged', 'patient', patient.id, `self-registered ${patientName} confirmed by LIS import`);
+      }
       if (!patient) {
         const pid = await insert('INSERT INTO patients (full_name, age, sex, mobile) VALUES (?,?,?,?)', [patientName, age, sex, mobile || `unknown-${patientName}`]);
         patient = (await get('SELECT * FROM patients WHERE id=?', [pid]));
