@@ -183,13 +183,21 @@ patient, status).
 4. Report view: values with high/low flags, plain-language summaries, PDF download, flag-a-summary
 5. Secure-link landing + OTP (the 72-hour link path)
 6. Staff login
-7. Staff console: callback tasks, flagged summaries, patient search + resend, message outbox, access log, weekly AI-summary review
-8. Pathologist import + sign-off
-9. (depth) Doctor report list - 10. (depth) Ops report
+7. Staff console: patient search + resend
+8. Staff message outbox: every mocked WhatsApp/SMS/OTP with delivery status, filterable by mobile and kind
+9. Staff tasks (critical callbacks + flagged summaries), weekly AI-summary review
+10. Pathologist import + sign-off
+11. (depth) Doctor report list - 12. (depth) Ops report
 
-## 11. Testing
+## 11. Reliability notes
 
-`npm test` -> **21 vitest integration tests** against the real app on a temp database:
+- Sign-off can never be stalled by a sick AI provider: every provider call has a hard 10s timeout (AI_TIMEOUT_MS), generation stops attempting AI after a 25s per-order budget (AI_ORDER_BUDGET_MS), and the locked template is always the floor.
+- Deploy startup is deterministic: the seed never touches the network and only seeds an EMPTY database, so a service restart does not wipe data while the instance filesystem survives (free-tier recycles still start empty - see Limitations).
+- Provider errors are logged (test name + error only, no patient data) so template fallbacks are diagnosable in host logs.
+
+## 12. Testing
+
+`npm test` -> **24 vitest integration tests** against the real app on a temp database:
 
 - `tests/api.test.js` (14): flag rules (normal/high/low/critical), summary-engine
   safety (critical suppressed, unknown suppressed, disclaimer present, three
@@ -197,6 +205,7 @@ patient, status).
   pipeline (link + message + summaries + callback task), secure link flow
   (expiry, OTP gate, wrong OTP attempts), staff console (resend, task
   completion, flag review), CSV import edge cases.
+- `tests/resilience.test.js` (3) - a hanging provider still falls back fast, a silent server hits the hard timeout, and the seed skips a populated database.
 - `tests/security.test.js` (7) - the security review, executable:
   role isolation (401 with no session, 403 with the wrong role); IDOR - a
   patient session cannot read another mobile's order, and a link-verified
@@ -208,7 +217,7 @@ patient, status).
   download is rejected; the weekly sample returns at most 50 rows and records
   reviews.
 
-## 12. Trade-offs, assumptions and honest limitations
+## 13. Trade-offs, assumptions and honest limitations
 
 **Assumptions the lab must review before any real use:**
 
@@ -249,7 +258,7 @@ patient, status).
   does not claim DPDP residency compliance.
 - **PDFs are functional, not branded** like the lab's printed letterhead.
 
-## 13. If we had more time
+## 14. If we had more time
 
 Real WhatsApp Business API with delivery receipts; Postgres + multi-branch; audit export for
 the lab owner; push the callback task to the doctor too; ABHA/ABDM health-record linking.
