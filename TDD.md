@@ -61,7 +61,10 @@ PDF reports: pdfkit, generated at sign-off and on demand
 
 - **Backend:** Express, one async data layer (`server/db.js`) over better-sqlite3 locally and `pg` (Postgres) when `DATABASE_URL` is set, pdfkit.
 - **Frontend:** React 19 + Vite + Tailwind, mobile-first, large tap targets and large text,
-  language switcher persisted per patient.
+  language switcher persisted per patient. Every patient-facing surface carries the switcher and
+  all of its error states (OTP failures, rate limits, network loss, invalid links) render in the
+  selected language; a lost connection shows a retryable message instead of hanging or silently
+  bouncing to sign-in. Staff and doctor consoles are English-only and carry no switcher.
 - **Messaging:** `server/outbox.js` writes every WhatsApp/SMS/OTP to an `outbox` table and a
   ticker simulates send/delivered status. Swapping in MSG91/Twilio is a one-file change.
 - **Tests:** 52 vitest integration tests (`tests/`: api, security, resilience, sms, liswatch) boot the
