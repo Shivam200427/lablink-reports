@@ -114,7 +114,7 @@ export default function ReportView() {
     </div>
   );
 
-  if (!data) return <div className="py-20 text-center text-lg text-slate-400">Loading…</div>;
+  if (!data) return <div className="py-20 text-center text-lg text-slate-400">{t(lang, 'loading')}</div>;
   return (
     <div>
       <BrandHeader right={<LangPicker lang={lang} setLang={setLang} />} />

@@ -50,6 +50,7 @@ const D = {
   linkNotFound: { en: 'This link is not valid. Please ask the lab to send a new one, or log in with your mobile number.', te: 'ఈ లింక్ చెల్లదు. దయచేసి కొత్త లింక్ కోసం ల్యాబ్‌ను అడగండి, లేదా మీ మొబైల్ నంబర్‌తో లాగిన్ అవ్వండి.', hi: 'यह लिंक मान्य नहीं है। कृपया लैब से नया लिंक मांगें या अपने मोबाइल नंबर से लॉग इन करें।' },
   rateLimited: { en: 'Too many attempts. Please wait a few minutes and try again.', te: 'చాలా సార్లు ప్రయత్నించారు. దయచేసి కొద్ది నిమిషాలు ఆగి మళ్లీ ప్రయత్నించండి.', hi: 'बहुत अधिक प्रयास हो गए। कृपया कुछ मिनट रुकें और फिर कोशिश करें।' },
   genericError: { en: 'Something went wrong. Please check your connection and try again.', te: 'ఏదో తప్పు జరిగింది. దయచేసి మీ కనెక్షన్ సరిచూసి మళ్లీ ప్రయత్నించండి.', hi: 'कुछ गड़बड़ हो गई। कृपया अपना कनेक्शन जांचें और फिर कोशिश करें।' },
+  loading: { en: 'Loading…', te: 'లోడ్ అవుతోంది…', hi: 'लोड हो रहा है…' },
   goHome: { en: 'Go to home', te: 'హోమ్‌కు వెళ్లండి', hi: 'होम पर जाएं' },
   staffLink: { en: 'Staff', te: 'సిబ్బంది', hi: 'स्टाफ़' },
   doctorsLink: { en: 'Doctors', te: 'వైద్యులు', hi: 'डॉक्टर' },

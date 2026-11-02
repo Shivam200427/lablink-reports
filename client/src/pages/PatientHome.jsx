@@ -37,7 +37,7 @@ export default function PatientHome() {
     </div>
   );
 
-  if (!me || !orders) return <div className="py-20 text-center text-lg text-slate-400">Loading…</div>;
+  if (!me || !orders) return <div className="py-20 text-center text-lg text-slate-400">{t(lang, 'loading')}</div>;
   const visible = person ? orders.filter((o) => o.patient_id === person.id) : [];
 
   return (

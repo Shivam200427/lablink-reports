@@ -22,7 +22,7 @@ export default function LinkGate() {
     })();
   }, [token]);
 
-  if (!info) return <div className="py-20 text-center text-lg text-slate-400">Loading…</div>;
+  if (!info) return <div className="py-20 text-center text-lg text-slate-400">{t(lang, 'loading')}</div>;
 
   async function sendOtp() {
     setBusy(true); setError('');
