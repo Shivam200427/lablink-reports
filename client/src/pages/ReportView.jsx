@@ -90,15 +90,30 @@ export default function ReportView() {
   const nav = useNavigate();
   const { lang, setLang } = React.useContext(LangCtx);
   const [data, setData] = React.useState(null);
-  React.useEffect(() => {
-    (async () => {
-      const r = await api(`/api/patient/orders/${id}`);
-      if (!r.ok) return nav('/');
-      setData(r.data);
-      const langPref = r.data.order.preferred_language;
-      if (langPref && !localStorage.getItem('ll_lang')) setLang(langPref);
-    })();
-  }, [id]);
+  const [loadErr, setLoadErr] = React.useState('');
+
+  async function load() {
+    setLoadErr(''); setData(null);
+    const r = await api(`/api/patient/orders/${id}`);
+    if (r.status === 401 || r.status === 403) return nav('/');
+    if (!r.ok) return setLoadErr(t(lang, 'genericError'));
+    setData(r.data);
+    const langPref = r.data.order.preferred_language;
+    if (langPref && !localStorage.getItem('ll_lang')) setLang(langPref);
+  }
+
+  React.useEffect(() => { load(); }, [id]);
+
+  if (loadErr) return (
+    <div>
+      <BrandHeader right={<LangPicker lang={lang} setLang={setLang} />} />
+      <div className="card text-center">
+        <p className="text-base text-red-600">{loadErr}</p>
+        <button className="btn mt-4" onClick={load}>{t(lang, 'tryAgain')}</button>
+      </div>
+    </div>
+  );
+
   if (!data) return <div className="py-20 text-center text-lg text-slate-400">Loading…</div>;
   return (
     <div>

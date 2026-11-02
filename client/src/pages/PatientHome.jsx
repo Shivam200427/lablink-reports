@@ -11,17 +11,31 @@ export default function PatientHome() {
   const [me, setMe] = React.useState(null);
   const [orders, setOrders] = React.useState(null);
   const [person, setPerson] = React.useState(null);
+  const [loadErr, setLoadErr] = React.useState('');
 
-  React.useEffect(() => {
-    (async () => {
-      const r = await api('/api/patient/me');
-      if (!r.ok) return nav('/');
-      setMe(r.data);
-      if (r.data.patients.length === 1) setPerson(r.data.patients[0]);
-      const o = await api('/api/patient/orders');
-      setOrders(o.data?.orders || []);
-    })();
-  }, []);
+  async function load() {
+    setLoadErr(''); setMe(null); setOrders(null);
+    const r = await api('/api/patient/me');
+    if (r.status === 401) return nav('/');
+    if (!r.ok) return setLoadErr(t(lang, 'genericError'));
+    setMe(r.data);
+    if (r.data.patients.length === 1) setPerson(r.data.patients[0]);
+    const o = await api('/api/patient/orders');
+    if (!o.ok) return setLoadErr(t(lang, 'genericError'));
+    setOrders(o.data?.orders || []);
+  }
+
+  React.useEffect(() => { load(); }, []);
+
+  if (loadErr) return (
+    <div>
+      <BrandHeader right={<LangPicker lang={lang} setLang={setLang} />} />
+      <div className="card text-center">
+        <p className="text-base text-red-600">{loadErr}</p>
+        <button className="btn mt-4" onClick={load}>{t(lang, 'tryAgain')}</button>
+      </div>
+    </div>
+  );
 
   if (!me || !orders) return <div className="py-20 text-center text-lg text-slate-400">Loading…</div>;
   const visible = person ? orders.filter((o) => o.patient_id === person.id) : [];
