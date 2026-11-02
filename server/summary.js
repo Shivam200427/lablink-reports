@@ -79,7 +79,7 @@ export async function generateSummariesForOrder(orderId) {
     for (let j = 0; j < chunk.length; j++) {
       const texts = chunk[j];
       if (!texts) continue;
-      ins.run(results[i + j].id, texts.lang_en, texts.lang_te, texts.lang_hi, texts.engine, texts.engine === 'template' ? 'high' : 'medium');
+      ins.run(results[i + j].id, texts.lang_en, texts.lang_te, texts.lang_hi, texts.engine, texts.engine === 'template' ? 'high' : 'low');
       created++;
     }
   }
