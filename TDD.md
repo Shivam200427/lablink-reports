@@ -58,8 +58,8 @@ PDF reports: pdfkit, generated at sign-off and on demand
   language switcher persisted per patient.
 - **Messaging:** `server/outbox.js` writes every WhatsApp/SMS/OTP to an `outbox` table and a
   ticker simulates send/delivered status. Swapping in MSG91/Twilio is a one-file change.
-- **Tests:** vitest integration suites (`tests/api.test.js` + `tests/security.test.js`,
-  21 tests) boot the real app on a throwaway database.
+- **Tests:** 24 vitest integration tests (`tests/`: api, security, resilience) boot the
+  real app on a throwaway database.
 
 ## 5. Core flow
 
