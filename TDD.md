@@ -137,9 +137,14 @@ provider (`AI_API_KEY`) - none was paid for this submission.
    report, not inside every summary.
 6. **Patient can flag a summary as wrong.** Flags land in the staff console;
    staff review and resolve. The event is access-logged.
-7. **Locked templates cover the 31 most common analytes** (`server/kb.js`,
-   name-matched, with SAMPLE critical thresholds) - exceeding the brief's "30
-   most common tests". Honestly stated: this is ONE fixed sentence pattern per
+7. **Template floor, stated honestly:** the knowledge base name-matches 31 common
+   analytes (`server/kb.js`, with SAMPLE critical thresholds), but the locked
+   template is one generic direction sentence per language ("your X is
+   below/above the normal range", with the value and range filled in) - not 30
+   test-specific, clinically worded explanations. The brief's "locked templates
+   for the 30 most common tests" is therefore met only as a safe generic floor:
+   the meaningful per-test explanation is expected from the AI, and per-test
+   template copy needs a pathologist's authorship before real use. Honestly stated: this is ONE fixed sentence pattern per
    direction (below/above), rendered in en/te/hi with the analyte's own name,
    value and reference range - fixed wording, nothing generated - applied to
    all 31 analytes, not 31 distinct hand-written texts. Analytes outside the
