@@ -1,7 +1,7 @@
 # LabLink - Technical Design Document
 
 **GitHub:** https://github.com/Shivam200427/lablink-reports (public; full source + commit history)
-**Live app:** not deployed publicly (submission constraint: no paid services; runs locally - see deployment.md for one-command setup and free-tier steps)
+**Live app:** https://lablink-reports.onrender.com (free Render demo, Singapore region; sleeps when idle so the first load can take ~50s; demo data resets to seed on restart. No paid services used.)
 
 **Product:** secure lab-report delivery for Company A, Vijayawada ("LabLink" is a demo brand name chosen for this submission)
 **Author:** Shivam Jain, built with AI assistance (the brief encourages AI) - **Date:** 2 November 2026 - **Stack:** Node.js 22 / Express / SQLite - React 19 / Vite / Tailwind
@@ -104,14 +104,18 @@ serve every summary and rows are marked `engine=template`. Nothing is faked:
 each summary row stores whether it came from `ai`, `ai+template` (partial
 fallback) or `template`.
 
-**Tested result (this demo):** the app was run once against a free keyless
-endpoint (pollinations.ai) via `AI_BASE_URL`, from the app's own code path -
-not mocked. A real AI sentence was returned, passed validation and was stored
-(`engine=ai+template`; the Telugu/Hindi variants of that row fell back to
-templates under the free endpoint's throttling). Concurrent calls were
-throttled by the free endpoint, so generation is sequential with spacing, and
-fallback under throttling is by design. A production deployment should use a
-paid, compliant provider - none was paid for this submission.
+**Live configuration (this demo, honest state):** the deployed app is
+configured with `AI_BASE_URL=https://text.pollinations.ai/openai`,
+`AI_MODEL=openai-fast` - a free keyless endpoint, no paid key. The AI code
+path is real and was proven end-to-end from the app's own code (a real
+validated AI sentence stored as `engine=ai+template`). On the free demo host,
+provider calls did not succeed at verification time, so every live summary
+served from the locked templates - the safety floor working exactly as
+designed, and labelled honestly: every summary row stores `engine=ai`,
+`ai+template` or `template`, visible on the staff Summary-sample page.
+Generation is sequential with spacing; fallback under throttling or provider
+failure is by design. A production deployment should use a paid, compliant
+provider (`AI_API_KEY`) - none was paid for this submission.
 
 **Safety rules, enforced in code and tested:**
 

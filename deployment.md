@@ -1,5 +1,7 @@
 # LabLink - Deployment
 
+**Live demo instance:** https://lablink-reports.onrender.com (Render free tier, Singapore; sleeps when idle - first load can take ~50s; data resets to seed on restart). The steps below are exactly how it was deployed, and how to reproduce it.
+
 LabLink is a single Node.js process that serves the API and the built React client, with
 SQLite stored on disk. Any host that runs Node.js 20+ works. No external paid services are
 required: SMS/WhatsApp messages are written to a local `outbox` table (mocked).

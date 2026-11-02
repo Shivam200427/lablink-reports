@@ -1,5 +1,7 @@
 # LabLink - Lab Report Delivery for Company A, Vijayawada
 
+**Live demo:** https://lablink-reports.onrender.com (free tier; sleeps when idle - first load can take ~50s; data resets to seed on restart)
+
 ("LabLink" is a demo brand name chosen for this submission; the client is "Company A" per the brief.)
 
 LabLink lets a small diagnostic lab deliver signed-off reports to patients on their phones:
@@ -17,7 +19,8 @@ callback task for the front desk instead. One mobile number can cover a whole fa
 - All messaging (WhatsApp/SMS/OTP) is mocked into an `outbox` table - no paid services
 - Plain-language summaries use an AI provider when configured (`AI_API_KEY`, or a
   keyless `AI_BASE_URL` endpoint); every AI sentence is validated and falls back
-  to locked templates, which is how the free demo runs by default
+  to locked templates when it throttles or fails validation. The live demo runs
+  on a free keyless endpoint; with no AI env vars it serves templates only
 
 ## Quick start
 
@@ -34,9 +37,9 @@ For development with hot reload: `npm run dev` (API on :3000) plus `npm run dev:
 
 | Role | Login |
 | --- | --- |
-| Patient | mobile `9000000001` (Lakshmi's family) or `9000000004` (Srinivas & Padma) - OTP appears in the server log and the `outbox` table |
+| Patient | mobile `9000000001` (Lakshmi's family) or `9000000004` (Srinivas & Padma) - OTP appears in the staff console (front desk > search the mobile > Messages) and the `outbox` table |
 | Front desk | username `frontdesk`, password `Lab@2026` |
-| Doctor | mobile `9000000020` (Dr. P. Anitha) - OTP login |
+| Doctor | mobile `9100000002` (Dr. P. Anitha) - OTP login |
 | Lab owner / ops | username `ops`, password `Ops@2026` |
 | Pathologist (sign-off) | username `patho`, password `Patho@2026` |
 
