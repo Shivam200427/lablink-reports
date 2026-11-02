@@ -73,15 +73,15 @@ export async function generateSummariesForOrder(orderId) {
   const ins = db.prepare(`INSERT INTO summaries (result_id, lang_en, lang_te, lang_hi, engine, confidence)
     VALUES (?,?,?,?,?,?) ON CONFLICT(result_id) DO NOTHING`);
   let created = 0;
-  const BATCH = 5; // keep free providers happy; failures fall back to templates
-  for (let i = 0; i < results.length; i += BATCH) {
-    const chunk = await Promise.all(results.slice(i, i + BATCH).map((r) => buildSummaryTextsWithAI(r)));
-    for (let j = 0; j < chunk.length; j++) {
-      const texts = chunk[j];
-      if (!texts) continue;
-      ins.run(results[i + j].id, texts.lang_en, texts.lang_te, texts.lang_hi, texts.engine, texts.engine === 'template' ? 'high' : 'low');
-      created++;
-    }
+  // Sequential with a pause: polite to free providers, and any failure falls
+  // back to the locked template for that language (never a burst of retries).
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  for (const r of results) {
+    const texts = await buildSummaryTextsWithAI(r);
+    if (!texts) continue;
+    ins.run(r.id, texts.lang_en, texts.lang_te, texts.lang_hi, texts.engine, texts.engine === 'template' ? 'high' : 'low');
+    created++;
+    if (isAIEnabled()) await sleep(1200);
   }
   return created;
 }
