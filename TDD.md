@@ -163,18 +163,17 @@ Summary-sample page.
    report, not inside every summary.
 6. **Patient can flag a summary as wrong.** Flags land in the staff console;
    staff review and resolve. The event is access-logged.
-7. **Template floor, stated honestly:** the knowledge base name-matches 31 common
-   analytes (`server/kb.js`, with SAMPLE critical thresholds), but the locked
-   template is one generic direction sentence per language ("your X is
-   below/above the normal range", with the value and range filled in) - not 30
-   test-specific, clinically worded explanations. The brief's "locked templates
-   for the 30 most common tests" is therefore met only as a safe generic floor:
-   the meaningful per-test explanation is expected from the AI, and per-test
-   template copy needs a pathologist's authorship before real use. Honestly stated: this is ONE fixed sentence pattern per
-   direction (below/above), rendered in en/te/hi with the analyte's own name,
-   value and reference range - fixed wording, nothing generated - applied to
-   all 31 analytes, not 31 distinct hand-written texts. Analytes outside the
-   KB get no summary by design.
+7. **Per-test locked templates:** `server/templates.js` carries a distinct locked
+   explanation for each of the 31 KB analytes, for both directions (high/low),
+   in English, Telugu and Hindi - one to two factual, non-diagnostic sentences
+   (what the analyte does, what a high or low value can be seen with), each
+   ending with the fixed line that the result alone does not confirm any
+   illness and to discuss it with a doctor. Value and reference range are
+   filled in at render. A generic direction sentence remains only as the
+   fallback pattern. The wording is drafted from standard patient-education
+   facts and is NOT clinically reviewed: before any real use the pathologist
+   must approve every text, and the Telugu/Hindi drafts need a fluent
+   reviewer's pass. Analytes outside the KB get no summary by design.
 8. **Pathologist weekly quality review:** `GET /api/staff/summary-sample`
    returns up to **50 random summaries from the last 7 days**; the pathologist
    records an `ok` / `needs_fix` verdict per summary (stored in
@@ -235,7 +234,7 @@ patient, status).
 
 `npm test` -> **48 vitest integration tests** against the real app on a temp database:
 
-- `tests/api.test.js` (30): flag rules (normal/high/low/critical), summary-engine
+- `tests/api.test.js` (32): flag rules (normal/high/low/critical), summary-engine
   safety (critical suppressed, unknown suppressed, disclaimer present, three
   languages), patient OTP login + consent + family scoping, patient self-registration (new
   mobile registers empty, existing mobile is told to log in, OTP verify creates the
@@ -245,7 +244,10 @@ patient, status).
   of converging, ambiguous name-only rows are held with a staff-facing error),
   grant-based authorization (no grant -> not registered, walk-in refuses without the
   staff attestation, verify-contact unlocks an imported patient once, rejected merges
-  stay separate), the full sign-off
+  stay separate, a merge confirm without explicit staff attestation is refused with
+  400, revoking a contact grant immediately closes active secure-link sessions with
+  403 on report and PDF, and all 31 per-test templates exist in both directions and
+  all three languages), the full sign-off
   pipeline (link + message + summaries + callback task), secure link flow
   (expiry, OTP gate, wrong OTP attempts), staff console (resend, task
   completion, flag review), CSV import edge cases, manual front-desk order entry (create -> sign-off ->
@@ -281,7 +283,15 @@ patient, status).
   the lab's attestation is a desk practice - if the front desk attests a number
   without checking the person, the wrong person gets in. The system makes the
   attestation explicit and attributed rather than implicit; the lab must staff it
-  honestly. Mitigations in place: per-report OTP on secure links, 72-hour link
+  honestly. Revoking any grant closes the door everywhere at once: portal login,
+  and already-open secure-link sessions (report and PDF return 403 on the next
+  request), because every link request re-checks that the grant behind it is
+  still active. Migration provenance is honest: the one-time backfill creates
+  `self` grants only where real OTP evidence existed and leaves pre-existing
+  lab-registered patients unverified until a genuine staff attestation - no
+  invented attestations - while the demo seed's grants are attributed to the
+  system (shown as "demo fixture (system)"), never to a staff member.
+  Mitigations in place: per-report OTP on secure links, 72-hour link
   expiry, explicit revocable grants, and a full access log.
 - **Sample critical thresholds:** the critical limits in `server/kb.js` (e.g.
   potassium, haemoglobin) are SAMPLE values chosen to exercise the critical

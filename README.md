@@ -64,8 +64,9 @@ then sign off the new orders and watch the outbox (staff console > Messages).
 ## Tests
 
 ```bash
-npm test     # 48 integration tests: flag rules, summary safety, OTP/consent/family,
-             # grant-based access (attestation, merges, delegation), sign-off
+npm test     # 50 integration tests: flag rules, summary safety, OTP/consent/family,
+             # grant-based access (attestation, merges, delegation, revocation),
+             # per-test locked templates, sign-off
              # pipeline, secure links, staff console, CSV import, sms guard,
              # + security suite (roles, IDOR, OTP lockout, link expiry, PDF access)
 ```
