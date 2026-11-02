@@ -266,6 +266,15 @@ lab-asserted and self-registered records) - `sms_budget` + `sms_real_claims`
 - `tests/liswatch.test.js` (2) - a CSV dropped in the watch folder is imported
   through the same pipeline and moved to `imported/`; a malformed file is moved
   to `failed/` and logged, never silently dropped.
+
+**Test-dialect caveat, stated plainly:** the suite runs on SQLite. Two bugs in
+the ops report (`date()` on a TEXT column; `day` as a bare column alias) were
+valid SQLite but invalid Postgres and only surfaced on the live deploy - found
+by hitting the deployed endpoint, fixed, and re-verified live. SQL is written
+in the shared dialect (`substr()`, `AS` aliases, positional GROUP BY) to keep
+both engines happy; a CI job against real Postgres is future work. After every
+deploy the live API is smoke-checked directly (auth, each role, the report
+endpoint) before the build is called ready.
 - `tests/security.test.js` (7) - the security review, executable:
   role isolation (401 with no session, 403 with the wrong role); IDOR - a
   patient session cannot read another mobile's order, and a link-verified
