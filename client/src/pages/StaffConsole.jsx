@@ -147,9 +147,7 @@ export default function StaffConsole() {
                     {(!g.kind || g.kind === 'delegated') && <span className="text-slate-400">{g.relation ? ` · ${g.relation}` : ''} · granted by {g.granted_by_name}</span>}
                     <span className="text-slate-400"> · {(g.created_at || '').slice(0, 10)}</span>
                   </div>
-                  {(!g.kind || g.kind === 'delegated') && (
-                    <button className="text-sm font-medium text-red-600 underline" onClick={() => revokeAccess(detail.patient.id, g.id)}>Revoke</button>
-                  )}
+                  <button className="text-sm font-medium text-red-600 underline" onClick={() => revokeAccess(detail.patient.id, g.id)}>Revoke</button>
                 </div>
               ))}
             </div>
