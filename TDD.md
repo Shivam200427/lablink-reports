@@ -43,7 +43,7 @@ appointment booking, EMR integration beyond CSV.
 Single-process monolith, deliberately boring so a small lab can run it anywhere:
 
 ```
-LIS CSV -> Express API -> SQLite (13 tables)
+LIS CSV -> Express API -> SQLite (14 tables)
                 |
                 +─ sign-off -> 72h secure link + WhatsApp/SMS (mocked outbox)
                 |            + plain-language summaries en/te/hi (AI or locked template)
