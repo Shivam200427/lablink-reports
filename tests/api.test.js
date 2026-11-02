@@ -38,6 +38,8 @@ beforeAll(async () => {
   db.prepare('INSERT INTO patients (full_name, age, sex, mobile) VALUES (?,?,?,?)').run('Family Member', 65, 'M', '9800000001');
   db.prepare('INSERT INTO doctors (full_name, mobile) VALUES (?,?)').run('Dr. Test', '9100000099');
   db.prepare('INSERT INTO staff (username, password_hash, full_name, role) VALUES (?,?,?,?)').run('desk', hashPassword('pw123'), 'Desk User', 'frontdesk');
+  db.prepare('INSERT INTO staff (username, password_hash, full_name, role) VALUES (?,?,?,?)').run('patho', hashPassword('pw123'), 'Patho User', 'pathologist');
+  db.prepare('INSERT INTO staff (username, password_hash, full_name, role) VALUES (?,?,?,?)').run('ops', hashPassword('pw123'), 'Ops User', 'ops');
   // fixture grants: the two fixture patients stand in for lab-registered
   // patients whose contact numbers were verified at registration
   const deskId = db.prepare("SELECT id FROM staff WHERE username='desk'").get().id;
@@ -180,10 +182,16 @@ describe('staff console', () => {
     await a.post('/api/auth/staff/login').send({ username: 'desk', password: 'pw123' });
     const s = await a.get('/api/staff/patients?q=Test');
     expect(s.body.patients[0].mobile).toBe('******0001');
+    // import is the pathologist's job: front desk is denied (403, not logged out)
+    expect((await a.post('/api/staff/import').attach('file', Buffer.from('Order ID,Patient,Mobile,Parameter,Result,Reference Range,Status,Referring Doctor\nORD-DENY,Deny Case,9800000099,Haemoglobin,11.0,12.0-15.5,Ready,Dr. Test\n'), 'lis.csv')).status).toBe(403);
+    await a.post('/api/auth/staff/login').send({ username: 'patho', password: 'pw123' });
     const imp = await a.post('/api/staff/import').attach('file', Buffer.from(
       'Order ID,Patient,Mobile,Parameter,Result,Reference Range,Status,Referring Doctor\nORD-T2,Import Case,9800000007,Haemoglobin,11.0,12.0-15.5,Ready,Dr. Test\n'
     ), 'lis.csv');
     expect(imp.body.newOrders).toBe(1);
+    // the ops report is for the operations head: pathologist is denied too
+    expect((await a.get('/api/staff/ops-report')).status).toBe(403);
+    await a.post('/api/auth/staff/login').send({ username: 'ops', password: 'pw123' });
     const r = await a.get('/api/staff/ops-report');
     // Report-notification metrics reconcile: linksSent = delivered + failed + inFlight
     expect(r.body.notif.linksSent).toBeGreaterThan(0);
@@ -359,7 +367,9 @@ describe('manual front-desk order entry', () => {
     const row = list.body.orders.find((o) => o.order_code === r.body.orderCode);
     expect(row).toBeTruthy();
     expect(row.flagged).toBe(1);
-    // pathologist signs -> link + message; patient logs in with OTP and sees it
+    // front desk cannot sign off (403); the pathologist signs -> link + message
+    expect((await a.post(`/api/staff/orders/${r.body.orderId}/signoff`).send({})).status).toBe(403);
+    await a.post('/api/auth/staff/login').send({ username: 'patho', password: 'pw123' });
     const so = await a.post(`/api/staff/orders/${r.body.orderId}/signoff`).send({});
     expect(so.body.ok).toBe(true);
     const p = agent();
@@ -400,6 +410,7 @@ describe('manual front-desk order entry', () => {
       results: [{ parameter: 'Potassium', value: '6.8' }],
     });
     expect(r.status).toBe(200);
+    await a.post('/api/auth/staff/login').send({ username: 'patho', password: 'pw123' });
     const so = await a.post(`/api/staff/orders/${r.body.orderId}/signoff`).send({});
     expect(so.body.summaries).toBe(0); // no AI/template sentence without a source range
     const p = agent();
@@ -519,6 +530,7 @@ describe('grant-based authorization', () => {
       results: [{ parameter: 'LDL Cholesterol', value: '142', referenceRange: '0-100' }],
     });
     expect(r.status).toBe(200);
+    await s.post('/api/auth/staff/login').send({ username: 'patho', password: 'pw123' });
     await s.post(`/api/staff/orders/${r.body.orderId}/signoff`).send({});
     // patient opens the secure link with OTP (active link session)
     const linkMsg = db.prepare(`SELECT body FROM outbox WHERE order_id=? AND kind='report_ready'`).get(r.body.orderId);

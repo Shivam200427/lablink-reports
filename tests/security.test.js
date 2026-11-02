@@ -18,6 +18,7 @@ beforeAll(async () => {
   db.prepare('INSERT INTO patients (full_name, age, sex, mobile) VALUES (?,?,?,?)').run('Bob B', 45, 'M', '9700000002');
   db.prepare('INSERT INTO doctors (full_name, mobile) VALUES (?,?)').run('Dr. Sec', '9100000098');
   db.prepare('INSERT INTO staff (username, password_hash, full_name, role) VALUES (?,?,?,?)').run('sec', hashPassword('pw123'), 'Sec Desk', 'frontdesk');
+  db.prepare('INSERT INTO staff (username, password_hash, full_name, role) VALUES (?,?,?,?)').run('secpatho', hashPassword('pw123'), 'Sec Patho', 'pathologist');
   const pa = db.prepare('SELECT id FROM patients WHERE mobile=?').get('9700000001').id;
   const pb = db.prepare('SELECT id FROM patients WHERE mobile=?').get('9700000002').id;
   const secId = db.prepare("SELECT id FROM staff WHERE username='sec'").get().id;
@@ -119,6 +120,9 @@ describe('security review', () => {
   it('weekly sample endpoint returns at most 50 rows and records reviews', async () => {
     const a = agent();
     await a.post('/api/auth/staff/login').send({ username: 'sec', password: 'pw123' });
+    // weekly AI review is the pathologist's job: front desk is denied
+    expect((await a.get('/api/staff/summary-sample')).status).toBe(403);
+    await a.post('/api/auth/staff/login').send({ username: 'secpatho', password: 'pw123' });
     const r = await a.get('/api/staff/summary-sample');
     expect(r.status).toBe(200);
     expect(r.body.sample.length).toBeLessThanOrEqual(50);

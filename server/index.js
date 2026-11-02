@@ -48,6 +48,22 @@ function requireRole(...types) {
     next();
   };
 }
+// Per-staff-role authorization. requireRole only checks the actor type
+// (staff vs patient vs doctor); the brief assigns specific duties to specific
+// staff roles: the pathologist imports, reviews summaries and signs off, the
+// front desk runs the console and walk-in orders, and the operations head
+// gets the delivery/access report.
+function requireStaffRole(...roles) {
+  return async (req, res, next) => {
+    const a = await actor(req);
+    if (!a) return res.status(401).json({ error: 'unauthorized' });
+    if (a.type !== 'staff') return res.status(403).json({ error: 'forbidden' });
+    const s = await get('SELECT role FROM staff WHERE id=?', [a.id]);
+    if (!s || !roles.includes(s.role)) return res.status(403).json({ error: 'forbidden' });
+    req.actor = { ...a, role: s.role };
+    next();
+  };
+}
 const setSessionCookie = (res, token) =>
   res.cookie('ll_session', token, { httpOnly: true, sameSite: 'lax', maxAge: 12 * 3600 * 1000 });
 
@@ -298,7 +314,7 @@ app.get('/api/link/:token/pdf', async (req, res) => {
 
 // Weekly AI-summary quality sample: the pathologist reviews up to 50 summaries
 // from the last 7 days (client brief safety requirement).
-app.get('/api/staff/summary-sample', requireRole('staff'), async (req, res) => {
+app.get('/api/staff/summary-sample', requireStaffRole('pathologist'), async (req, res) => {
   const rows = (await all(
     `SELECT s.id, s.lang_en, s.lang_te, s.lang_hi, s.engine, s.created_at,
             r.parameter, r.value, r.unit, r.reference_range, r.flag,
@@ -313,7 +329,7 @@ app.get('/api/staff/summary-sample', requireRole('staff'), async (req, res) => {
   res.json({ sample: rows });
 });
 
-app.post('/api/staff/summary-sample/:id/review', requireRole('staff'), async (req, res) => {
+app.post('/api/staff/summary-sample/:id/review', requireStaffRole('pathologist'), async (req, res) => {
   const verdict = req.body?.verdict;
   if (!['ok', 'needs_fix'].includes(verdict)) return res.status(400).json({ error: 'bad_verdict' });
   const sum = (await get('SELECT id FROM summaries WHERE id=?', [req.params.id]));
@@ -474,7 +490,7 @@ app.post('/api/staff/orders/:id/resend-link', requireRole('staff'), async (req, 
   res.json({ ok: true });
 });
 
-app.post('/api/staff/import', requireRole('staff'), upload.single('file'), async (req, res) => {
+app.post('/api/staff/import', requireStaffRole('pathologist'), upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no_file' });
   const report = await importCSV(req.file.buffer.toString('utf8'), req.actor);
   res.json(report);
@@ -486,7 +502,7 @@ app.post('/api/staff/import', requireRole('staff'), upload.single('file'), async
 // what creates the 'contact' grant that later lets the patient log in.
 // Without the attestation the entry is refused (400). The order lands in
 // processing; the pathologist reviews and signs as usual.
-app.post('/api/staff/orders', requireRole('staff'), async (req, res) => {
+app.post('/api/staff/orders', requireStaffRole('frontdesk'), async (req, res) => {
   const b = req.body || {};
   if (b.contactVerified !== true) return res.status(400).json({ error: 'contact_attestation_required' });
   const fullName = String(b.patientName || '').trim();
@@ -553,7 +569,7 @@ app.get('/api/staff/orders', requireRole('staff'), async (req, res) => {
   res.json({ orders: rows });
 });
 
-app.post('/api/staff/orders/:id/signoff', requireRole('staff'), async (req, res) => {
+app.post('/api/staff/orders/:id/signoff', requireStaffRole('pathologist'), async (req, res) => {
   const r = await signOffOrder(Number(req.params.id), req.body.signedBy || 'Duty Pathologist', req.actor);
   if (r.error) return res.status(400).json(r);
   res.json(r);
@@ -601,7 +617,7 @@ app.get('/api/staff/access-log', requireRole('staff'), async (req, res) => {
   res.json({ log: rows });
 });
 
-app.get('/api/staff/ops-report', requireRole('staff'), async (req, res) => {
+app.get('/api/staff/ops-report', requireStaffRole('ops'), async (req, res) => {
   // Delivery metrics are scoped to report-ready notifications so the numbers
   // reconcile: linksSent = delivered + failed + inFlight (queued/sent).
   // OTP messages are a separate, clearly-labelled count.
@@ -624,7 +640,7 @@ app.get('/api/staff/ops-report', requireRole('staff'), async (req, res) => {
   // 'day' is a syntax error as a bare alias on Postgres, so use AS day_label
   // and positional GROUP BY/ORDER BY. PG returns COUNT(*) as strings.
   const daily = (await all(
-    `SELECT substr(created_at,1,10) AS day_label, COUNT(*) AS msg_count FROM outbox GROUP BY 1 ORDER BY 1 DESC LIMIT 14`, []))
+    `SELECT substr(created_at,1,10) AS day_label, COUNT(*) AS msg_count FROM outbox WHERE kind='report_ready' GROUP BY 1 ORDER BY 1 DESC LIMIT 14`, []))
     .map((r) => ({ day: r.day_label, messages: Number(r.msg_count || 0) }));
   await logAccess('staff', req.actor.id, 'ops_report_view', null, null, null);
   res.json({ notif, otpMessages, orders, views, downloads, openCallbacks, openFlags, daily });

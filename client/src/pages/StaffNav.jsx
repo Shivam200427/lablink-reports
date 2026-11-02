@@ -13,17 +13,17 @@ const ROLE_LABEL = { frontdesk: 'Front desk', pathologist: 'Pathologist', ops: '
 
 const GROUPS = [
   { label: 'Patients & orders', items: [
-    ['Find a patient', '/staff/console'],
-    ['New walk-in order', '/staff/new-order'],
-    ['Import & sign-off', '/staff/import'],
-    ['Tasks & callbacks', '/staff/tasks'],
+    ['Find a patient', '/staff/console', ['frontdesk', 'pathologist', 'ops']],
+    ['New walk-in order', '/staff/new-order', ['frontdesk']],
+    ['Import & sign-off', '/staff/import', ['pathologist']],
+    ['Tasks & callbacks', '/staff/tasks', ['frontdesk', 'pathologist']],
   ]},
   { label: 'Messages & review', items: [
-    ['Messages', '/staff/messages'],
-    ['Weekly AI review', '/staff/sample'],
+    ['Messages', '/staff/messages', ['frontdesk', 'ops']],
+    ['Weekly AI review', '/staff/sample', ['pathologist']],
   ]},
   { label: 'Insights', items: [
-    ['Ops report', '/staff/ops'],
+    ['Ops report', '/staff/ops', ['ops']],
   ]},
 ];
 
@@ -61,10 +61,10 @@ export default function StaffNav() {
           <>
             <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
             <div className="absolute right-0 z-20 mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
-              {GROUPS.map((g) => (
+              {GROUPS.map((g) => ({ ...g, visible: g.items.filter(([, , roles]) => !me || roles.includes(me.role)) })).filter((g) => g.visible.length).map((g) => (
                 <div key={g.label} className="mb-1">
                   <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{g.label}</div>
-                  {g.items.map(([l, p]) => (
+                  {g.visible.map(([l, p]) => (
                     <a
                       key={p}
                       href={p}

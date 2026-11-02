@@ -55,7 +55,7 @@ return (
       </div>
       <div className="card mt-5 p-0">
         <table className="w-full text-left text-base">
-          <thead><tr className="border-b border-slate-200 text-slate-500"><th className="px-5 py-3 font-medium">Day</th><th className="px-5 py-3 font-medium">Messages sent</th></tr></thead>
+          <thead><tr className="border-b border-slate-200 text-slate-500"><th className="px-5 py-3 font-medium">Day</th><th className="px-5 py-3 font-medium">Report links sent</th></tr></thead>
           <tbody>
             {d.daily.map((r) => <tr key={r.day} className="border-b border-slate-100 last:border-0"><td className="px-5 py-2.5">{r.day}</td><td className="px-5 py-2.5">{r.messages}</td></tr>)}
           </tbody>
