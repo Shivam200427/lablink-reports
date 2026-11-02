@@ -150,7 +150,7 @@ app.get('/api/patient/orders/:id', requireRole('patient'), async (req, res) => {
   const order = await orderForPatient(req, req.params.id);
   if (!order) return res.status(404).json({ error: 'not_found' });
   const results = (await all(
-    `SELECT r.*, s.id summary_id, s.lang_en, s.lang_te, s.lang_hi, s.confidence,
+    `SELECT r.*, s.id summary_id, s.lang_en, s.lang_te, s.lang_hi, s.confidence, s.engine,
        (SELECT COUNT(*) FROM summary_flags f WHERE f.summary_id=s.id AND f.status='open') flagged
      FROM results r LEFT JOIN summaries s ON s.result_id=r.id WHERE r.order_id=?`, [order.id]));
   await logAccess('patient', req.actor.id, 'report_view', 'order', order.id, order.order_code);
@@ -225,7 +225,7 @@ app.get('/api/link/:token/report', async (req, res) => {
     `SELECT o.*, p.full_name patient_name, p.age, p.sex, p.preferred_language, d.full_name doctor_name
      FROM orders o JOIN patients p ON p.id=o.patient_id LEFT JOIN doctors d ON d.id=o.doctor_id WHERE o.id=?`, [l.order_id]));
   const results = (await all(
-    `SELECT r.*, s.id summary_id, s.lang_en, s.lang_te, s.lang_hi, s.confidence
+    `SELECT r.*, s.id summary_id, s.lang_en, s.lang_te, s.lang_hi, s.confidence, s.engine
      FROM results r LEFT JOIN summaries s ON s.result_id=r.id WHERE r.order_id=?`, [l.order_id]));
   await logAccess('patient', l.patient_id, 'report_view_via_link', 'order', l.order_id, l.order_code);
   res.json({ order, results, hasPdf: ['ready', 'ready_critical'].includes(order.status) });

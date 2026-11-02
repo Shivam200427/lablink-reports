@@ -327,6 +327,12 @@ describe('manual front-desk order entry', () => {
     await patientLogin(p, '9800000090');
     const orders = await p.get('/api/patient/orders');
     expect(orders.body.orders.map((o) => o.order_code)).toContain(r.body.orderCode);
+    // the report API exposes the summary engine so the UI can label
+    // AI-written vs standard wording honestly
+    const detail = await p.get(`/api/patient/orders/${r.body.orderId}`);
+    const summarized = detail.body.results.filter((x) => x.summary_id);
+    expect(summarized.length).toBeGreaterThan(0);
+    for (const x of summarized) expect(['template', 'ai', 'ai+template']).toContain(x.engine);
   });
 
   it('converges with a self-registered patient on mobile+name (lab-asserted entry)', async () => {
