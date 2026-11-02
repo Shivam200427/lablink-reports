@@ -26,6 +26,12 @@ becoming a bottleneck.
 | Referring doctor (optional depth) | Treating physician | OTP login, sees their referred patients' released reports |
 | Lab owner / ops (optional depth) | Owner | Delivery and turnaround stats |
 
+Staff roles are enforced server-side, not just hidden in the UI: import,
+sign-off and the weekly AI review answer `403` to anyone but a pathologist,
+walk-in order entry to anyone but the front desk, and the ops report to
+anyone but the ops head. A `403` keeps the session and shows an explanatory
+screen; only an expired/absent session (`401`) returns to sign-in.
+
 ## 3. Scope
 
 **In scope (core build):** LIS CSV import; automatic secure report link on sign-off; patient
@@ -203,13 +209,13 @@ lab-asserted and self-registered records) - `sms_budget` + `sms_real_claims`
 - Secure link: `GET /api/link/:token`, `POST /api/link/:token/request-otp`,
   `POST /api/link/:token/verify`, `GET /api/link/:token/report`,
   `GET /api/link/:token/pdf`
-- Staff: `POST /api/auth/staff/login`, `POST /api/staff/orders` (walk-in entry), `POST /api/staff/import`,
+- Staff: `POST /api/auth/staff/login`, `POST /api/auth/staff/logout`, `POST /api/staff/orders` (walk-in entry, front desk only), `POST /api/staff/import` (pathologist only),
   `GET /api/staff/orders?status=` (orders with public codes for the sign-off list),
-  `POST /api/staff/orders/:id/signoff`, `POST /api/staff/orders/:id/resend-link`,
+  `POST /api/staff/orders/:id/signoff` (pathologist only), `POST /api/staff/orders/:id/resend-link`,
   `GET /api/staff/tasks`, `POST /api/staff/tasks/:id/done`,
   `POST /api/staff/summary-flags/:id/review`, `GET /api/staff/outbox`,
-  `GET /api/staff/access-log`, `GET /api/staff/ops-report`,
-  `GET /api/staff/summary-sample`, `POST /api/staff/summary-sample/:id/review`
+  `GET /api/staff/access-log`, `GET /api/staff/ops-report` (ops head only),
+  `GET /api/staff/summary-sample`, `POST /api/staff/summary-sample/:id/review` (pathologist only)
 - Doctor: `POST /api/auth/doctor/request-otp` (+ verify), `GET /api/doctor/reports`
 
 ## 10. Screens
@@ -220,7 +226,7 @@ lab-asserted and self-registered records) - `sms_budget` + `sms_real_claims`
 4. Patient report list
 5. Report view: values with high/low flags, plain-language summaries, PDF download, flag-a-summary
 6. Secure-link landing + OTP (the 72-hour link path)
-7. Staff login
+7. Staff login; signed-in staff get a hamburger menu grouped by task (Patients & orders / Messages & review / Insights) showing only the pages their role may use, plus sign-out; a forbidden page explains `403` without ending the session
 8. Staff console: patient search + resend
 9. Front-desk walk-in order entry (patient + test results, no CSV)
 10. Staff message outbox: every mocked WhatsApp/SMS/OTP with delivery status, filterable by mobile and kind
