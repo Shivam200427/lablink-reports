@@ -22,7 +22,16 @@ async function defaultClient(messages) {
   const res = await fetch(`${base}/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...(process.env.AI_API_KEY ? { authorization: `Bearer ${process.env.AI_API_KEY}` } : {}) },
-    body: JSON.stringify({ model: process.env.AI_MODEL || 'gpt-4o-mini', messages, temperature: 0.2, max_tokens: 120 }),
+    body: JSON.stringify({
+      model: process.env.AI_MODEL || 'gpt-4o-mini', messages, temperature: 0.2,
+      // 400 tokens: Telugu/Hindi answers tokenise longer than English, and
+      // some models (Gemini) count hidden reasoning against the budget.
+      max_tokens: 400,
+      // Optional provider hint (e.g. AI_REASONING_EFFORT=none for Gemini
+      // free tier) - only sent when set, so OpenAI-style providers never
+      // see an unknown field.
+      ...(process.env.AI_REASONING_EFFORT ? { reasoning_effort: process.env.AI_REASONING_EFFORT } : {}),
+    }),
     // Hard ceiling (default 10s, AI_TIMEOUT_MS override): a slow or
     // unreachable provider must never hang a sign-off or deploy startup.
     // Timeout -> locked template fallback.
