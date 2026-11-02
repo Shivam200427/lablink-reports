@@ -617,6 +617,8 @@ app.get('/api/staff/ops-report', requireRole('staff'), async (req, res) => {
   const cb = await q('callbacks', () => get(`SELECT COUNT(*) c FROM callback_tasks WHERE status='open'`, []));
   const fl = await q('flags', () => get(`SELECT COUNT(*) c FROM summary_flags WHERE status='open'`, []));
   const dy = await q('daily', () => all(`SELECT substr(created_at,1,10) day, COUNT(*) messages FROM outbox GROUP BY substr(created_at,1,10) ORDER BY day DESC LIMIT 14`, []));
+  const dySafe = await q('dailySafe', () => all(`SELECT substr(created_at,1,10) AS day_label, COUNT(*) AS msg_count FROM outbox GROUP BY 1 ORDER BY 1 DESC LIMIT 14`, []));
+  const dyMsg = await q('dailyMsg', async () => { try { await all(`SELECT substr(created_at,1,10) day, COUNT(*) messages FROM outbox GROUP BY substr(created_at,1,10) ORDER BY day DESC LIMIT 14`, []); return 'ok'; } catch (e) { diag.push('dailyMsg: ' + e.message.slice(0, 80)); return null; } });
   if (diag.length) return res.status(500).json({ error: 'internal', diag });
   const n = (k) => Number(nstat.find((s) => s.status === k)?.c || 0);
   const notif = {
