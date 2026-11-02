@@ -2,12 +2,30 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { BrandHeader } from '../App.jsx';
-import { StaffNav } from './StaffLogin.jsx';
+import StaffNav from './StaffNav.jsx';
 
 export default function OpsReport() {
   const nav = useNavigate();
   const [d, setD] = React.useState(null);
-  React.useEffect(() => { (async () => { const r = await api('/api/staff/ops-report'); if (!r.ok) return nav('/staff'); setD(r.data); })(); }, []);
+  const [err, setErr] = React.useState('');
+  async function load() {
+    setErr('');
+    const r = await api('/api/staff/ops-report');
+    if (r.status === 401 || r.status === 403) return nav('/staff');
+    if (!r.ok) return setErr('The report could not be loaded. Please try again.');
+    setD(r.data);
+  }
+  React.useEffect(() => { load(); }, []);
+  if (err) return (
+    <div>
+      <BrandHeader />
+      <StaffNav />
+      <div className="card mt-10 text-center">
+        <p className="mb-4 text-base text-slate-700">{err}</p>
+        <button className="btn" onClick={load}>Retry</button>
+      </div>
+    </div>
+  );
   if (!d) return <div className="py-20 text-center text-lg text-slate-400">Loading…</div>;
   const card = (label, value) => (
     <div className="card p-4 text-center">

@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { BrandHeader } from '../App.jsx';
-import { StaffNav } from './StaffLogin.jsx';
+import StaffNav from './StaffNav.jsx';
 
 // Whole-lab message log. Entries marked "mock" are simulated - no real
 // message ever left the box; "delivered" on a mock entry is the simulation
@@ -15,7 +15,7 @@ export default function StaffOutbox() {
   const [mobile, setMobile] = React.useState('');
   const [kind, setKind] = React.useState('');
 
-  React.useEffect(() => { (async () => { const r = await api('/api/staff/me'); if (!r.ok) nav('/staff'); })(); }, []);
+  React.useEffect(() => { (async () => { const r = await api('/api/staff/me'); if (r.status === 401 || r.status === 403) nav('/staff'); })(); }, []);
 
   async function load(m) {
     const q = m && /^\d{10}$/.test(m) ? `?mobile=${m}` : '';

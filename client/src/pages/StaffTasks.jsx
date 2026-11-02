@@ -2,14 +2,14 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { BrandHeader } from '../App.jsx';
-import { StaffNav } from './StaffLogin.jsx';
+import StaffNav from './StaffNav.jsx';
 
 export default function StaffTasks() {
   const nav = useNavigate();
   const [data, setData] = React.useState(null);
   const load = async () => {
     const r = await api('/api/staff/tasks');
-    if (!r.ok) return nav('/staff');
+    if (r.status === 401 || r.status === 403) return nav('/staff');
     setData(r.data);
   };
   React.useEffect(() => { load(); }, []);

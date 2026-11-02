@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { BrandHeader } from '../App.jsx';
-import { StaffNav } from './StaffLogin.jsx';
+import StaffNav from './StaffNav.jsx';
 
 export default function StaffImport() {
   const nav = useNavigate();
@@ -11,7 +11,7 @@ export default function StaffImport() {
   const [orders, setOrders] = React.useState([]);
   const [signResult, setSignResult] = React.useState('');
 
-  React.useEffect(() => { (async () => { const r = await api('/api/staff/me'); if (!r.ok) nav('/staff'); })(); }, []);
+  React.useEffect(() => { (async () => { const r = await api('/api/staff/me'); if (r.status === 401 || r.status === 403) nav('/staff'); })(); }, []);
 
   async function loadOrders() {
     const r = await api('/api/staff/orders?status=processing');

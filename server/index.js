@@ -338,6 +338,16 @@ app.post('/api/auth/staff/login', async (req, res) => {
   res.json({ ok: true, name: staff.full_name, role: staff.role });
 });
 
+app.post('/api/auth/staff/logout', async (req, res) => {
+  const a = await actor(req);
+  if (a) {
+    (await run('DELETE FROM sessions WHERE token_hash=?', [sha256(req.cookies?.ll_session || '')]));
+    await logAccess(a.type, a.id, 'logout', a.type, a.id, null);
+  }
+  res.clearCookie('ll_session');
+  res.json({ ok: true });
+});
+
 app.get('/api/staff/me', requireRole('staff'), async (req, res) => {
   const s = (await get('SELECT id, username, full_name, role FROM staff WHERE id=?', [req.actor.id]));
   res.json(s);
@@ -596,21 +606,25 @@ app.get('/api/staff/ops-report', requireRole('staff'), async (req, res) => {
   // reconcile: linksSent = delivered + failed + inFlight (queued/sent).
   // OTP messages are a separate, clearly-labelled count.
   const nstat = (await all(`SELECT status, COUNT(*) c FROM outbox WHERE kind='report_ready' GROUP BY status`, []));
-  const n = (k) => nstat.find((s) => s.status === k)?.c || 0;
+  const n = (k) => Number(nstat.find((s) => s.status === k)?.c || 0);
   const notif = {
     linksSent: n('delivered') + n('failed') + n('sent') + n('queued'),
     delivered: n('delivered'),
     failed: n('failed'),
     inFlight: n('sent') + n('queued'),
   };
-  const otpMessages = (await get(`SELECT COUNT(*) c FROM outbox WHERE kind='otp'`, [])).c;
-  const orders = (await all('SELECT status, COUNT(*) c FROM orders GROUP BY status', []));
-  const views = (await get(`SELECT COUNT(*) c FROM access_log WHERE action LIKE 'report_view%'`, [])).c;
-  const downloads = (await get(`SELECT COUNT(*) c FROM access_log WHERE action='pdf_download'`, [])).c;
-  const openCallbacks = (await get(`SELECT COUNT(*) c FROM callback_tasks WHERE status='open'`, [])).c;
-  const openFlags = (await get(`SELECT COUNT(*) c FROM summary_flags WHERE status='open'`, [])).c;
+  const otpMessages = Number((await get(`SELECT COUNT(*) c FROM outbox WHERE kind='otp'`, [])).c || 0);
+  const orders = (await all('SELECT status, COUNT(*) c FROM orders GROUP BY status', []))
+    .map((r) => ({ status: r.status, c: Number(r.c || 0) }));
+  const views = Number((await get(`SELECT COUNT(*) c FROM access_log WHERE action LIKE 'report_view%'`, [])).c || 0);
+  const downloads = Number((await get(`SELECT COUNT(*) c FROM access_log WHERE action='pdf_download'`, [])).c || 0);
+  const openCallbacks = Number((await get(`SELECT COUNT(*) c FROM callback_tasks WHERE status='open'`, [])).c || 0);
+  const openFlags = Number((await get(`SELECT COUNT(*) c FROM summary_flags WHERE status='open'`, [])).c || 0);
+  // substr(created_at,1,10) is dialect-safe (created_at is TEXT in both modes;
+  // SQLite's date() has no Postgres equivalent on a TEXT column).
   const daily = (await all(
-    `SELECT date(created_at) day, COUNT(*) messages FROM outbox GROUP BY date(created_at) ORDER BY day DESC LIMIT 14`, []));
+    `SELECT substr(created_at,1,10) day, COUNT(*) messages FROM outbox GROUP BY substr(created_at,1,10) ORDER BY day DESC LIMIT 14`, []))
+    .map((r) => ({ day: r.day, messages: Number(r.messages || 0) }));
   await logAccess('staff', req.actor.id, 'ops_report_view', null, null, null);
   res.json({ notif, otpMessages, orders, views, downloads, openCallbacks, openFlags, daily });
 });
@@ -685,5 +699,7 @@ if (fs.existsSync(dist)) {
 setInterval(tickOutbox, 5000).unref();
 
 if (process.argv[1] && process.argv[1].endsWith('index.js')) {
+  const { startLisWatch } = await import('./liswatch.js');
+  startLisWatch();
   app.listen(PORT, () => console.log(`LabLink listening on ${BASE_URL}`));
 }

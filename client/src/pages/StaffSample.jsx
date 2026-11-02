@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { BrandHeader } from '../App.jsx';
-import { StaffNav } from './StaffLogin.jsx';
+import StaffNav from './StaffNav.jsx';
 
 // Weekly AI-summary quality sample (pathologist reviews up to 50/week).
 export default function StaffSample() {
@@ -11,7 +11,7 @@ export default function StaffSample() {
 
   React.useEffect(() => { (async () => {
     const me = await api('/api/staff/me');
-    if (!me.ok) return nav('/staff');
+    if (me.status === 401 || me.status === 403) return nav('/staff');
     const r = await api('/api/staff/summary-sample');
     if (r.ok) setRows(r.data.sample);
   })(); }, []);

@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { BrandHeader } from '../App.jsx';
-import { StaffNav } from './StaffLogin.jsx';
+import StaffNav from './StaffNav.jsx';
 
 const emptyResult = () => ({ parameter: '', value: '', unit: '', referenceRange: '' });
 
@@ -19,7 +19,7 @@ export default function StaffNewOrder() {
   const [done, setDone] = React.useState(null);
   const [err, setErr] = React.useState('');
 
-  React.useEffect(() => { (async () => { const r = await api('/api/staff/me'); if (!r.ok) nav('/staff'); })(); }, []);
+  React.useEffect(() => { (async () => { const r = await api('/api/staff/me'); if (r.status === 401 || r.status === 403) nav('/staff'); })(); }, []);
 
   const setRow = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   const valid = patientName.trim().length >= 2 && mobile.length === 10 && attested
