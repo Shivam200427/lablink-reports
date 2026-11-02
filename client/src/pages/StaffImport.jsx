@@ -11,7 +11,8 @@ export default function StaffImport() {
   const [orders, setOrders] = React.useState([]);
   const [signResult, setSignResult] = React.useState('');
 
-  React.useEffect(() => { (async () => { const r = await api('/api/staff/me'); if (r.status === 401 || r.status === 403) nav('/staff'); })(); }, []);
+  React.useEffect(() => { (async () => { const r = await api('/api/staff/me'); if (r.status === 401) return nav('/staff');
+      if (r.status === 403) return nav('/staff/forbidden'); })(); }, []);
 
   async function loadOrders() {
     const r = await api('/api/staff/orders?status=processing');

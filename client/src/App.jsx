@@ -6,6 +6,7 @@ import PatientHome from './pages/PatientHome.jsx';
 import ReportView from './pages/ReportView.jsx';
 import LinkGate from './pages/LinkGate.jsx';
 import StaffLogin from './pages/StaffLogin.jsx';
+import StaffForbidden from './pages/StaffForbidden.jsx';
 import StaffConsole from './pages/StaffConsole.jsx';
 import StaffImport from './pages/StaffImport.jsx';
 import StaffNewOrder from './pages/StaffNewOrder.jsx';
@@ -55,6 +56,7 @@ export default function App() {
           <Route path="/orders/:id" element={<ReportView />} />
           <Route path="/r/:token" element={<LinkGate />} />
           <Route path="/staff" element={<StaffLogin />} />
+          <Route path="/staff/forbidden" element={<StaffForbidden />} />
           <Route path="/staff/console" element={<StaffConsole />} />
           <Route path="/staff/import" element={<StaffImport />} />
           <Route path="/staff/new-order" element={<StaffNewOrder />} />

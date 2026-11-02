@@ -11,7 +11,8 @@ export default function StaffSample() {
 
   React.useEffect(() => { (async () => {
     const me = await api('/api/staff/me');
-    if (me.status === 401 || me.status === 403) return nav('/staff');
+    if (me.status === 401) return nav('/staff');
+    if (me.status === 403) return nav('/staff/forbidden');
     const r = await api('/api/staff/summary-sample');
     if (r.ok) setRows(r.data.sample);
   })(); }, []);

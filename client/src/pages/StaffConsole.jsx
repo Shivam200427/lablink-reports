@@ -33,7 +33,8 @@ export default function StaffConsole() {
   const [msg, setMsg] = React.useState('');
   const [merges, setMerges] = React.useState([]);
 
-  React.useEffect(() => { (async () => { const r = await api('/api/staff/me'); if (r.status === 401 || r.status === 403) nav('/staff'); })(); }, []);
+  React.useEffect(() => { (async () => { const r = await api('/api/staff/me'); if (r.status === 401) return nav('/staff');
+      if (r.status === 403) return nav('/staff/forbidden'); })(); }, []);
   React.useEffect(() => { loadMerges(); }, []);
 
   async function loadMerges() {

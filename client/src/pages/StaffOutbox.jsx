@@ -15,7 +15,8 @@ export default function StaffOutbox() {
   const [mobile, setMobile] = React.useState('');
   const [kind, setKind] = React.useState('');
 
-  React.useEffect(() => { (async () => { const r = await api('/api/staff/me'); if (r.status === 401 || r.status === 403) nav('/staff'); })(); }, []);
+  React.useEffect(() => { (async () => { const r = await api('/api/staff/me'); if (r.status === 401) return nav('/staff');
+      if (r.status === 403) return nav('/staff/forbidden'); })(); }, []);
 
   async function load(m) {
     const q = m && /^\d{10}$/.test(m) ? `?mobile=${m}` : '';

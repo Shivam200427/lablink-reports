@@ -11,7 +11,8 @@ export default function OpsReport() {
   async function load() {
     setErr('');
     const r = await api('/api/staff/ops-report');
-    if (r.status === 401 || r.status === 403) return nav('/staff');
+    if (r.status === 401) return nav('/staff');
+    if (r.status === 403) return nav('/staff/forbidden');
     if (!r.ok) return setErr('The report could not be loaded. Please try again.');
     setD(r.data);
   }

@@ -101,8 +101,12 @@ and phone numbers stay in-country.
   summaries at zero cost.
 - The lab's pathologist must review the SAMPLE critical thresholds in
   `server/kb.js` before real use.
-- LIS export-folder watch: the brief's wider must-have mentions being fed by the
-  LIS export folder; only the core-slice CSV import is built. Watching a folder
-  for new export files is a production step, not implemented.
+- LIS export-folder watch: set `LIS_WATCH_DIR` to the folder the LIS writes
+  exports to (default `<data dir>/lis-incoming`). The app polls it every 5s and
+  imports new CSVs through the same pipeline as the manual upload, moving each
+  file to `imported/` or `failed/`. The folder must be on a disk the app host
+  can read - on Render's free tier the filesystem is ephemeral and unreachable
+  from a lab machine, so use the manual import there, or run the app on a host
+  the LIS can write to (e.g. a small on-prem box) for unattended imports.
 - Postgres instead of SQLite if multiple lab branches ever share one deployment
   (the demo already runs on Postgres; local runs use SQLite).

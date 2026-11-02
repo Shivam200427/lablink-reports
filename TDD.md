@@ -58,12 +58,14 @@ PDF reports: pdfkit, generated at sign-off and on demand
   language switcher persisted per patient.
 - **Messaging:** `server/outbox.js` writes every WhatsApp/SMS/OTP to an `outbox` table and a
   ticker simulates send/delivered status. Swapping in MSG91/Twilio is a one-file change.
-- **Tests:** 50 vitest integration tests (`tests/`: api, security, resilience, sms) boot the
+- **Tests:** 52 vitest integration tests (`tests/`: api, security, resilience, sms, liswatch) boot the
   real app on a throwaway database.
 
 ## 5. Core flow
 
-1. **Import:** pathologist uploads the LIS CSV (`sample-data/lis-export.csv`), or the front
+1. **Import:** pathologist uploads the LIS CSV (`sample-data/lis-export.csv`) or drops
+   it in the watched export folder (`LIS_WATCH_DIR`, polled every 5s; files move
+   to `imported/` or `failed/` with access-log entries) - or the front
    desk registers a walk-in patient directly in the console (no CSV needed - the order
    lands in the same sign-off queue). Rows are grouped by Order ID; rows attach to
    **lab-created** records by mobile + name (or by name only when exactly one lab
@@ -236,7 +238,7 @@ lab-asserted and self-registered records) - `sms_budget` + `sms_real_claims`
 
 ## 12. Testing
 
-`npm test` -> **50 vitest integration tests** against the real app on a temp database:
+`npm test` -> **52 vitest integration tests** against the real app on a temp database:
 
 - `tests/api.test.js` (32): flag rules (normal/high/low/critical), summary-engine
   safety (critical suppressed, unknown suppressed, disclaimer present, three
@@ -261,6 +263,9 @@ lab-asserted and self-registered records) - `sms_budget` + `sms_real_claims`
   row-locked budget claim cannot double-spend, provider rejections are labelled
   distinctly from mock sends, and the recipient gate holds.
 - `tests/resilience.test.js` (3) - a hanging provider still falls back fast, a silent server hits the hard timeout, and the seed skips a populated database.
+- `tests/liswatch.test.js` (2) - a CSV dropped in the watch folder is imported
+  through the same pipeline and moved to `imported/`; a malformed file is moved
+  to `failed/` and logged, never silently dropped.
 - `tests/security.test.js` (7) - the security review, executable:
   role isolation (401 with no session, 403 with the wrong role); IDOR - a
   patient session cannot read another mobile's order, and a link-verified
@@ -337,13 +342,15 @@ lab-asserted and self-registered records) - `sms_budget` + `sms_real_claims`
   claim is made. A real deployment for Indian patient data should use an
   India-region host (e.g. AWS Mumbai / Azure Central India).
 - **PDFs are functional, not branded** like the lab's printed letterhead.
-- **LIS folder watch, not built:** the brief's wider must-have mentions the app
-  being fed by the LIS export folder. The core slice specifies CSV import, which
-  is what is built; watching a folder for new export files is a documented
-  production step, not implemented.
+- **LIS folder watch is host-dependent:** the app watches a folder
+  (`LIS_WATCH_DIR`, default `<data dir>/lis-incoming`) and imports dropped CSV
+  exports through the same pipeline as the manual upload. On the demo's cloud
+  host the lab's LIS machine cannot write to that disk, so the watch is
+  exercised in local/on-prem deployment; on the demo host the manual import
+  covers the flow.
 
 ## 14. If we had more time
 
-Real WhatsApp Business API with delivery receipts; LIS export-folder watch; managed Postgres
+Real WhatsApp Business API with delivery receipts; managed Postgres
 with backups and multi-branch support; audit export for the lab owner; push the callback task
 to the doctor too; ABHA/ABDM health-record linking.

@@ -9,7 +9,8 @@ export default function StaffTasks() {
   const [data, setData] = React.useState(null);
   const load = async () => {
     const r = await api('/api/staff/tasks');
-    if (r.status === 401 || r.status === 403) return nav('/staff');
+    if (r.status === 401) return nav('/staff');
+    if (r.status === 403) return nav('/staff/forbidden');
     setData(r.data);
   };
   React.useEffect(() => { load(); }, []);
