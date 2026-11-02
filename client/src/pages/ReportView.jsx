@@ -9,7 +9,7 @@ export function FlagBadge({ flag, lang }) {
   if (flag === 'low') return <span className="chip bg-amber-100 text-amber-800">{t(lang, 'low')}</span>;
   if (flag === 'high') return <span className="chip bg-orange-100 text-orange-800">{t(lang, 'high')}</span>;
   if (flag === 'critical') return <span className="chip bg-red-100 text-red-800">{t(lang, 'critical')}</span>;
-  return null;
+  return <span className="chip bg-slate-50 text-slate-400 border border-slate-200">{t(lang, 'notAssessed')}</span>;
 }
 
 export function ReportBody({ order, results, hasPdf, pdfUrl, lang, onFlag }) {

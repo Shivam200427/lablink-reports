@@ -393,7 +393,8 @@ app.get('/api/staff/orders', requireRole('staff'), async (req, res) => {
   const rows = (await all(
     `SELECT o.id, o.order_code, o.status, o.ordered_at, p.full_name patient_name, d.full_name doctor_name,
             (SELECT COUNT(*) FROM results r WHERE r.order_id=o.id AND r.flag IN ('high','low')) flagged,
-            (SELECT COUNT(*) FROM results r WHERE r.order_id=o.id AND r.flag='critical') critical
+            (SELECT COUNT(*) FROM results r WHERE r.order_id=o.id AND r.flag='critical') critical,
+            (SELECT COUNT(*) FROM results r WHERE r.order_id=o.id AND r.flag='unknown') no_range
      FROM orders o JOIN patients p ON p.id=o.patient_id LEFT JOIN doctors d ON d.id=o.doctor_id
      WHERE o.status=? ORDER BY o.ordered_at DESC LIMIT 50`, [status]));
   res.json({ orders: rows });

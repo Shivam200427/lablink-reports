@@ -66,6 +66,7 @@ export default function StaffImport() {
                   <div className="font-semibold text-slate-800">
                     {o.order_code}
                     {o.critical > 0 && <span className="chip ml-2 bg-red-100 text-red-800">{o.critical} critical</span>}
+                    {o.no_range > 0 && <span className="chip ml-2 border border-slate-200 bg-slate-50 text-slate-500">{o.no_range} no range</span>}
                     {o.critical === 0 && o.flagged > 0 && <span className="chip ml-2 bg-amber-100 text-amber-800">{o.flagged} out of range</span>}
                   </div>
                   <div className="text-sm text-slate-500">{o.patient_name} · {o.doctor_name || 'no referring doctor'} · {(o.ordered_at || '').slice(0, 10)}</div>

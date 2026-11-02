@@ -1,5 +1,6 @@
 const D = {
   appTag: { en: 'Your lab reports, simply.', te: 'మీ ల్యాబ్ నివేదికలు, సరళంగా.', hi: 'आपकी लैब रिपोर्ट, सरलता से।' },
+  notAssessed: { en: 'Not assessed - no range given', te: 'అంచనా లేదు - పరిధి ఇవ్వలేదు', hi: 'आकलन नहीं - रेंज नहीं दी गई' },
   regMobile: { en: 'Your mobile number', te: 'మీ మొబైల్ నంబర్', hi: 'आपका मोबाइल नंबर' },
   enterMobile: { en: 'Enter your registered mobile number', te: 'మీ నమోదైన మొబైల్ నంబర్ నమోదు చేయండి', hi: 'अपना पंजीकृत मोबाइल नंबर दर्ज करें' },
   sendOtp: { en: 'Send OTP', te: 'OTP పంపండి', hi: 'OTP भेजें' },

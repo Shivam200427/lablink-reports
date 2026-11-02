@@ -345,6 +345,29 @@ describe('manual front-desk order entry', () => {
     expect(orders.body.orders.map((o) => o.order_code)).toContain(r.body.orderCode);
   });
 
+  it('missing reference range stays unknown - never normal, never summarised', async () => {
+    const a = agent();
+    await a.post('/api/auth/staff/login').send({ username: 'desk', password: 'pw123' });
+    const r = await a.post('/api/staff/orders').send({
+      patientName: 'No Range Case', mobile: '9800000093',
+      // potassium has SAMPLE critical thresholds in the KB; a missing range must
+      // still NOT become critical/normal or produce any summary
+      results: [{ parameter: 'Potassium', value: '6.8' }],
+    });
+    expect(r.status).toBe(200);
+    const so = await a.post(`/api/staff/orders/${r.body.orderId}/signoff`).send({});
+    expect(so.body.summaries).toBe(0); // no AI/template sentence without a source range
+    const p = agent();
+    await patientLogin(p, '9800000093');
+    const detail = await p.get(`/api/patient/orders/${r.body.orderId}`);
+    const res = detail.body.results.find((x) => x.parameter === 'Potassium');
+    expect(res.flag).toBe('unknown'); // not 'normal' reassurance, not KB-critical
+    expect(detail.body.summaries ?? []).toEqual([]);
+    const list = await a.get('/api/staff/orders?status=ready');
+    const row = list.body.orders.find((o) => o.id === r.body.orderId);
+    expect(row.no_range).toBe(1); // staff see the missing range as a data-quality signal
+  });
+
   it('validates input and enforces the staff role', async () => {
     const a = agent();
     expect((await a.post('/api/staff/orders').send({ patientName: 'X Y', mobile: '9800000092', results: [{ parameter: 'Hb', value: '10' }] })).status).toBe(401);
