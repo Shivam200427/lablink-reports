@@ -10,8 +10,15 @@ import { flagResult } from './flags.js';
 import { findKBEntry } from './kb.js';
 import { signOffOrder } from './lis.js';
 
-const wipe = process.argv.includes('--wipe') || true;
-if (wipe) {
+// Restart-safe: seed only an EMPTY database. A service restart must never
+// wipe live data. Pass --wipe to force a fresh demo dataset.
+const forceWipe = process.argv.includes('--wipe');
+const alreadySeeded = db.prepare('SELECT COUNT(*) c FROM patients').get().c > 0;
+if (alreadySeeded && !forceWipe) {
+  console.log('seed: database already populated, leaving data untouched');
+  process.exit(0);
+}
+if (forceWipe) {
   for (const t of ['summary_flags','summaries','callback_tasks','access_log','outbox','sessions','otps','report_links','results','orders','doctors','staff','patients'])
     db.prepare(`DELETE FROM ${t}`).run();
 }
