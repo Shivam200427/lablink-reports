@@ -303,6 +303,17 @@ app.post('/api/staff/import', requireRole('staff'), upload.single('file'), (req,
   res.json(report);
 });
 
+app.get('/api/staff/orders', requireRole('staff'), (req, res) => {
+  const status = ['processing', 'ready', 'ready_critical'].includes(req.query.status) ? req.query.status : 'processing';
+  const rows = db.prepare(
+    `SELECT o.id, o.order_code, o.status, o.ordered_at, p.full_name patient_name, d.full_name doctor_name,
+            (SELECT COUNT(*) FROM results r WHERE r.order_id=o.id AND r.flag IN ('high','low')) flagged,
+            (SELECT COUNT(*) FROM results r WHERE r.order_id=o.id AND r.flag='critical') critical
+     FROM orders o JOIN patients p ON p.id=o.patient_id LEFT JOIN doctors d ON d.id=o.doctor_id
+     WHERE o.status=? ORDER BY o.ordered_at DESC LIMIT 50`).all(status);
+  res.json({ orders: rows });
+});
+
 app.post('/api/staff/orders/:id/signoff', requireRole('staff'), async (req, res) => {
   const r = await signOffOrder(Number(req.params.id), req.body.signedBy || 'Duty Pathologist', req.actor);
   if (r.error) return res.status(400).json(r);
@@ -352,17 +363,27 @@ app.get('/api/staff/access-log', requireRole('staff'), (req, res) => {
 });
 
 app.get('/api/staff/ops-report', requireRole('staff'), (req, res) => {
-  const byStatus = db.prepare('SELECT status, COUNT(*) c FROM outbox GROUP BY status').all();
+  // Delivery metrics are scoped to report-ready notifications so the numbers
+  // reconcile: linksSent = delivered + failed + inFlight (queued/sent).
+  // OTP messages are a separate, clearly-labelled count.
+  const nstat = db.prepare(`SELECT status, COUNT(*) c FROM outbox WHERE kind='report_ready' GROUP BY status`).all();
+  const n = (k) => nstat.find((s) => s.status === k)?.c || 0;
+  const notif = {
+    linksSent: n('delivered') + n('failed') + n('sent') + n('queued'),
+    delivered: n('delivered'),
+    failed: n('failed'),
+    inFlight: n('sent') + n('queued'),
+  };
+  const otpMessages = db.prepare(`SELECT COUNT(*) c FROM outbox WHERE kind='otp'`).get().c;
   const orders = db.prepare('SELECT status, COUNT(*) c FROM orders GROUP BY status').all();
   const views = db.prepare(`SELECT COUNT(*) c FROM access_log WHERE action LIKE 'report_view%'`).get().c;
   const downloads = db.prepare(`SELECT COUNT(*) c FROM access_log WHERE action='pdf_download'`).get().c;
-  const linksSent = db.prepare(`SELECT COUNT(*) c FROM outbox WHERE kind LIKE 'report%'`).get().c;
   const openCallbacks = db.prepare(`SELECT COUNT(*) c FROM callback_tasks WHERE status='open'`).get().c;
   const openFlags = db.prepare(`SELECT COUNT(*) c FROM summary_flags WHERE status='open'`).get().c;
   const daily = db.prepare(
     `SELECT date(created_at) day, COUNT(*) messages FROM outbox GROUP BY date(created_at) ORDER BY day DESC LIMIT 14`).all();
   logAccess('staff', req.actor.id, 'ops_report_view', null, null, null);
-  res.json({ byStatus, orders, views, downloads, linksSent, openCallbacks, openFlags, daily });
+  res.json({ notif, otpMessages, orders, views, downloads, openCallbacks, openFlags, daily });
 });
 
 // ---------- doctor view (optional depth) ----------

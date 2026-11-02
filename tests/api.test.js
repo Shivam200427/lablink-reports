@@ -176,7 +176,14 @@ describe('staff console', () => {
     ), 'lis.csv');
     expect(imp.body.newOrders).toBe(1);
     const r = await a.get('/api/staff/ops-report');
-    expect(r.body.linksSent).toBeGreaterThan(0);
+    // Report-notification metrics reconcile: linksSent = delivered + failed + inFlight
+    expect(r.body.notif.linksSent).toBeGreaterThan(0);
+    expect(r.body.notif.linksSent).toBe(r.body.notif.delivered + r.body.notif.failed + r.body.notif.inFlight);
+    expect(r.body.otpMessages).toBeGreaterThanOrEqual(0);
+    // Sign-off list exposes public order codes, never raw DB ids in the UI
+    const po = await a.get('/api/staff/orders?status=processing');
+    expect(po.status).toBe(200);
+    expect(po.body.orders.every((o) => o.status === 'processing' && /^ORD-/.test(o.order_code))).toBe(true);
     const before = db.prepare(`SELECT COUNT(*) c FROM outbox WHERE kind='report_ready'`).get().c;
     expect(before).toBeGreaterThan(0);
   });

@@ -15,19 +15,24 @@ export default function OpsReport() {
       <div className="text-sm text-slate-500">{label}</div>
     </div>
   );
-  const statusOf = (k) => d.byStatus.find((s) => s.status === k)?.c || 0;
-  return (
+return (
     <div>
       <BrandHeader />
       <StaffNav />
       <h2 className="mb-4 text-xl font-bold text-slate-900">Delivery & access report</h2>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        {card('Report links sent', d.linksSent)}
-        {card('Delivered', statusOf('delivered'))}
-        {card('Failed', statusOf('failed'))}
+      <p className="mb-2 text-sm font-medium text-slate-500">Report notifications (WhatsApp/SMS with the report link)</p>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {card('Links sent', d.notif.linksSent)}
+        {card('Delivered', d.notif.delivered)}
+        {card('Failed', d.notif.failed)}
+        {card('In progress', d.notif.inFlight)}
+      </div>
+      <p className="mb-2 mt-5 text-sm font-medium text-slate-500">Access</p>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {card('Report views', d.views)}
         {card('PDF downloads', d.downloads)}
         {card('Open callbacks', d.openCallbacks)}
+        {card('OTP messages', d.otpMessages)}
       </div>
       <div className="card mt-5 p-0">
         <table className="w-full text-left text-base">
