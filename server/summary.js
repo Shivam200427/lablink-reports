@@ -59,7 +59,11 @@ export async function buildSummaryTextsWithAI(result) {
         referenceRange: result.reference_range, flag: result.flag, lang,
       });
       if (text && validateAISummary(text, result)) return [lang, text.trim()];
-    } catch { /* provider error: keep the template for this language */ }
+    } catch (e) {
+      // Diagnosable but privacy-safe: test name + provider error only, never
+      // patient identity or result values. Template stays the floor.
+      console.warn(`AI summary fallback (${result.parameter}, ${lang}): ${e.message}`);
+    }
     return null;
   }));
   let aiUsed = 0;
