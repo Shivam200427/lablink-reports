@@ -43,7 +43,7 @@ appointment booking, EMR integration beyond CSV.
 Single-process monolith, deliberately boring so a small lab can run it anywhere:
 
 ```
-LIS CSV -> Express API -> database: SQLite locally, Postgres on the demo host (14 tables)
+LIS CSV -> Express API -> database: SQLite locally, Postgres on the demo host (18 tables)
                 |
                 +─ sign-off -> 72h secure link + WhatsApp/SMS (mocked outbox)
                 |            + plain-language summaries en/te/hi (AI or locked template)
@@ -58,7 +58,7 @@ PDF reports: pdfkit, generated at sign-off and on demand
   language switcher persisted per patient.
 - **Messaging:** `server/outbox.js` writes every WhatsApp/SMS/OTP to an `outbox` table and a
   ticker simulates send/delivered status. Swapping in MSG91/Twilio is a one-file change.
-- **Tests:** 48 vitest integration tests (`tests/`: api, security, resilience, sms) boot the
+- **Tests:** 50 vitest integration tests (`tests/`: api, security, resilience, sms) boot the
   real app on a throwaway database.
 
 ## 5. Core flow
@@ -105,8 +105,8 @@ PDF reports: pdfkit, generated at sign-off and on demand
 | Report links | 128-bit random token; only the **SHA-256 hash** is stored. Expires **72 hours** after sign-off. Opening a link requires an OTP to the registered mobile - the link alone is never enough. |
 | OTP | 6 digits, 10-minute validity, SHA-256 hashed at rest, single-use (consumed on success), max **5 attempts** per code, and **3 requests per 10 minutes per mobile** to stop brute force and spam. |
 | Sessions | Random bearer tokens, hashed at rest, 12-hour expiry, scoped (a link-verified session can only read that one order). |
-| Family numbers | One mobile maps to many patients; after OTP the user picks "whose reports". A patient session sees only patients on that number. |
-| Self-registration | OTP proves phone possession, not identity. A self-registered record is empty and marked `created_via=self`; Lab-asserted rows (LIS import or front-desk entry) attach on mobile+name match (record upgraded to lab-verified, access-logged); name-only LIS rows never attach to it. A mobile already known to the lab cannot self-register (409). Ambiguous name-only rows (two lab patients with the same name) are held with an error, never guessed. |
+| Family numbers | One mobile can serve many patients, but access comes from explicit per-patient grants, never from the number itself. A grant exists only after OTP-verified self-registration, a front-desk contact attestation (walk-in or verify-contact), or a delegated family grant. After OTP the user picks "whose reports" from only the patients they hold a grant for. Seeded demo families use system-labelled fixture grants, never attributed to a staff member. Revoking a grant immediately closes portal access and any already-open report links (403 access_revoked). |
+| Self-registration | OTP proves phone possession, not identity. A self-registered record is empty and marked `created_via=self`. Lab-asserted rows (LIS import or front-desk entry) never attach automatically: a same-mobile-and-name LIS import raises a **pending merge** that staff must explicitly attest before anything converges; name-only imports stay separate patients. A mobile already known to the lab cannot self-register (409). Ambiguous name-only rows (two lab patients with the same name) are held with an error, never guessed. |
 | Consent (DPDP) | Captured at **registration** on both enrolment paths: self-registration shows the consent notice after OTP verify, and lab-enrolled patients (created by LIS import) see it at first login. Acceptance (data used only to deliver lab reports, contact the lab to delete) is recorded with timestamp before any data is shown. |
 | Access log | Every report view, OTP event, resend, flag and sign-off writes an `access_log` row (actor, action, subject, time) - the lab can show who saw what, when. |
 | Critical values | Never summarised, and the message for a critical report tells the patient the lab will call. A callback task is created so no critical result is silently delivered. |
@@ -187,7 +187,11 @@ Summary-sample page.
 WhatsApp/SMS) - `access_log` - `summaries` (analyte, language, text, order) -
 `summary_flags` (patient flag + staff review status) - `summary_reviews`
 (pathologist weekly-sample verdicts) - `callback_tasks` (critical value,
-patient, status).
+patient, status) - `patient_access` (per-patient grants: who may see which
+patient, granted via OTP self-registration, staff contact attestation or
+delegation) - `patient_merges` (pending/rejected identity matches between
+lab-asserted and self-registered records) - `sms_budget` + `sms_real_claims`
+(atomic real-SMS spend guard, demo-only).
 
 ## 9. API surface (selected)
 
@@ -232,7 +236,7 @@ patient, status).
 
 ## 12. Testing
 
-`npm test` -> **48 vitest integration tests** against the real app on a temp database:
+`npm test` -> **50 vitest integration tests** against the real app on a temp database:
 
 - `tests/api.test.js` (32): flag rules (normal/high/low/critical), summary-engine
   safety (critical suppressed, unknown suppressed, disclaimer present, three
@@ -327,13 +331,19 @@ patient, status).
   was observed and the locked template took over, by design. Production
   should use a paid, compliant provider via `AI_API_KEY` - no provider was
   paid for this submission.
-- **India data residency:** the demo host options in deployment.md are free
-  tiers outside India. A real deployment for Indian patient data should use an
-  India-region host (e.g. AWS Mumbai / Azure Central India); this submission
-  does not claim DPDP residency compliance.
+- **India hosting, unmet:** the brief asks for hosting in India. The demo host's
+  free tiers run outside India (Render has no India region on any plan), so this
+  constraint is openly unmet on this demo and no residency or legal-compliance
+  claim is made. A real deployment for Indian patient data should use an
+  India-region host (e.g. AWS Mumbai / Azure Central India).
 - **PDFs are functional, not branded** like the lab's printed letterhead.
+- **LIS folder watch, not built:** the brief's wider must-have mentions the app
+  being fed by the LIS export folder. The core slice specifies CSV import, which
+  is what is built; watching a folder for new export files is a documented
+  production step, not implemented.
 
 ## 14. If we had more time
 
-Real WhatsApp Business API with delivery receipts; Postgres + multi-branch; audit export for
-the lab owner; push the callback task to the doctor too; ABHA/ABDM health-record linking.
+Real WhatsApp Business API with delivery receipts; LIS export-folder watch; managed Postgres
+with backups and multi-branch support; audit export for the lab owner; push the callback task
+to the doctor too; ABHA/ABDM health-record linking.

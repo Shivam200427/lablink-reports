@@ -13,7 +13,7 @@ No external paid services are required: SMS/WhatsApp messages are written to a l
 Prerequisites: Node.js 20+ and npm.
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Shivam200427/lablink-reports.git
 cd lablink-reports
 npm install
 npm run seed     # synthetic demo data (patients, orders, staff, doctors)
@@ -34,7 +34,7 @@ Tests: `npm test`
 | `BASE_URL` | `http://localhost:PORT` | Public base URL used inside report links - set this to the real https URL in production |
 | `PASSWORD_SALT` | `lablink-dev-salt` | Salt for staff password hashing - set a unique random value in production |
 | `AI_API_KEY` | _(unset)_ | Key for a paid/production AI provider. Unset = free demo mode using locked templates |
-| `AI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible chat API endpoint; a keyless endpoint works without `AI_API_KEY` (demo-proven) |
+| `AI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible chat API endpoint. The demo used Google's Gemini free tier (see the TDD); keyless endpoints were tried and dropped as unreliable |
 | `AI_MODEL` | `gpt-4o-mini` | Model used for summaries |
 
 ## 2b. Demo logins (synthetic data only, after `npm run seed`)
@@ -75,12 +75,10 @@ behind any HTTPS reverse proxy).
 
 The free-tier hosts above run outside India (Render has no India region on any
 plan - verified on Render's region docs). The brief asks for hosting in India,
-so this demo leaves that constraint openly unmet. (DPDP Act 2023 itself does
-not mandate in-country hosting; it restricts transfers only to notified
-countries - but the client's requirement stands regardless.) For real Indian
-patient data, deploy in an India region (e.g. AWS `ap-south-1` Mumbai or
-Azure Central India) so reports and phone numbers stay in-country. This demo
-does not claim DPDP residency compliance.
+so this demo leaves that constraint openly unmet; no legal or residency
+compliance is claimed either way. For real Indian patient data, deploy in an
+India region (e.g. AWS `ap-south-1` Mumbai or Azure Central India) so reports
+and phone numbers stay in-country.
 
 ## 5. Production checklist (what a real rollout still needs)
 
@@ -97,9 +95,14 @@ does not claim DPDP residency compliance.
 - Set a strong unique `PASSWORD_SALT` and rotate the demo staff passwords.
 - A persistent volume for `DATA_DIR` plus database backups.
 - For AI-written summaries in production, a paid compliant provider via
-  `AI_API_KEY` (a keyless free endpoint via `AI_BASE_URL` was used to prove the
-  AI path in the demo, but is not suitable for real patient data); without
-  either, the tested locked templates serve summaries at zero cost.
+  `AI_API_KEY` (the demo proved the AI path against Google's Gemini free tier;
+  a free tier trains on submitted content and is not suitable for real patient
+  data); without a provider configured, the tested locked templates serve
+  summaries at zero cost.
 - The lab's pathologist must review the SAMPLE critical thresholds in
   `server/kb.js` before real use.
-- Postgres instead of SQLite if multiple lab branches ever share one deployment.
+- LIS export-folder watch: the brief's wider must-have mentions being fed by the
+  LIS export folder; only the core-slice CSV import is built. Watching a folder
+  for new export files is a production step, not implemented.
+- Postgres instead of SQLite if multiple lab branches ever share one deployment
+  (the demo already runs on Postgres; local runs use SQLite).
