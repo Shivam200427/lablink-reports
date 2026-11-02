@@ -605,21 +605,7 @@ app.get('/api/staff/ops-report', requireRole('staff'), async (req, res) => {
   // Delivery metrics are scoped to report-ready notifications so the numbers
   // reconcile: linksSent = delivered + failed + inFlight (queued/sent).
   // OTP messages are a separate, clearly-labelled count.
-  // TEMP-DIAG: per-section labels to find the PG-only failure (removed after fix)
-  const diag = [];
-  const q = async (label, fn) => { try { return await fn(); } catch (e) { diag.push(label + ': ' + (e.code || e.message).slice(0, 60)); return null; } };
-  const nstat = (await q('nstat', () => all(`SELECT status, COUNT(*) c FROM outbox WHERE kind='report_ready' GROUP BY status`, [])));
-  if (diag.length) return res.status(500).json({ error: 'internal', diag });
-  const otpC = await q('otpC', () => get(`SELECT COUNT(*) c FROM outbox WHERE kind='otp'`, []));
-  const ordC = await q('ordC', () => all('SELECT status, COUNT(*) c FROM orders GROUP BY status', []));
-  const vw = await q('views', () => get(`SELECT COUNT(*) c FROM access_log WHERE action LIKE 'report_view%'`, []));
-  const dl = await q('downloads', () => get(`SELECT COUNT(*) c FROM access_log WHERE action='pdf_download'`, []));
-  const cb = await q('callbacks', () => get(`SELECT COUNT(*) c FROM callback_tasks WHERE status='open'`, []));
-  const fl = await q('flags', () => get(`SELECT COUNT(*) c FROM summary_flags WHERE status='open'`, []));
-  const dy = await q('daily', () => all(`SELECT substr(created_at,1,10) day, COUNT(*) messages FROM outbox GROUP BY substr(created_at,1,10) ORDER BY day DESC LIMIT 14`, []));
-  const dySafe = await q('dailySafe', () => all(`SELECT substr(created_at,1,10) AS day_label, COUNT(*) AS msg_count FROM outbox GROUP BY 1 ORDER BY 1 DESC LIMIT 14`, []));
-  const dyMsg = await q('dailyMsg', async () => { try { await all(`SELECT substr(created_at,1,10) day, COUNT(*) messages FROM outbox GROUP BY substr(created_at,1,10) ORDER BY day DESC LIMIT 14`, []); return 'ok'; } catch (e) { diag.push('dailyMsg: ' + e.message.slice(0, 80)); return null; } });
-  if (diag.length) return res.status(500).json({ error: 'internal', diag });
+  const nstat = (await all(`SELECT status, COUNT(*) c FROM outbox WHERE kind='report_ready' GROUP BY status`, []));
   const n = (k) => Number(nstat.find((s) => s.status === k)?.c || 0);
   const notif = {
     linksSent: n('delivered') + n('failed') + n('sent') + n('queued'),
@@ -634,11 +620,12 @@ app.get('/api/staff/ops-report', requireRole('staff'), async (req, res) => {
   const downloads = Number((await get(`SELECT COUNT(*) c FROM access_log WHERE action='pdf_download'`, [])).c || 0);
   const openCallbacks = Number((await get(`SELECT COUNT(*) c FROM callback_tasks WHERE status='open'`, [])).c || 0);
   const openFlags = Number((await get(`SELECT COUNT(*) c FROM summary_flags WHERE status='open'`, [])).c || 0);
-  // substr(created_at,1,10) is dialect-safe (created_at is TEXT in both modes;
-  // SQLite's date() has no Postgres equivalent on a TEXT column).
+  // Dialect-safe: created_at is TEXT in both modes, so substr() not date();
+  // 'day' is a syntax error as a bare alias on Postgres, so use AS day_label
+  // and positional GROUP BY/ORDER BY. PG returns COUNT(*) as strings.
   const daily = (await all(
-    `SELECT substr(created_at,1,10) day, COUNT(*) messages FROM outbox GROUP BY substr(created_at,1,10) ORDER BY day DESC LIMIT 14`, []))
-    .map((r) => ({ day: r.day, messages: Number(r.messages || 0) }));
+    `SELECT substr(created_at,1,10) AS day_label, COUNT(*) AS msg_count FROM outbox GROUP BY 1 ORDER BY 1 DESC LIMIT 14`, []))
+    .map((r) => ({ day: r.day_label, messages: Number(r.msg_count || 0) }));
   await logAccess('staff', req.actor.id, 'ops_report_view', null, null, null);
   res.json({ notif, otpMessages, orders, views, downloads, openCallbacks, openFlags, daily });
 });
