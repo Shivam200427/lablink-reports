@@ -45,10 +45,10 @@ export default function StaffOutbox() {
         {shown.map((m) => (
           <div key={m.id} className="card py-3">
             <div className="flex items-center justify-between">
-              <div className="text-sm text-slate-500">{m.to_mobile} · {m.channel} · {(m.created_at || '').slice(0, 16)}</div>
+              <div className="min-w-0 text-sm text-slate-500">{m.to_mobile} · {m.channel} · {(m.created_at || '').slice(0, 16)}</div>
               <span className={`chip ${m.status === 'delivered' ? 'bg-brand-100 text-brand-800' : m.status === 'failed' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>{m.status}</span>
             </div>
-            <div className="mt-1 text-base text-slate-800">{m.body}</div>
+            <div className="mt-1 break-words text-base text-slate-800">{m.body}</div>
           </div>
         ))}
         {shown.length === 0 && <p className="text-base text-slate-500">No messages yet.</p>}
