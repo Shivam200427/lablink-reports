@@ -82,7 +82,10 @@ DPDP residency compliance.
 
 - HTTPS in front of the app (links and OTPs must never travel over plain HTTP).
 - Real SMS: off by default (mocked outbox). Optional demo-grade Fast2SMS Quick SMS via
-  `FAST2SMS_API_KEY` + `FAST2SMS_ALLOWED_RECIPIENT` + `FAST2SMS_TOTAL_BUDGET` (see README):
+  `FAST2SMS_API_KEY` + `FAST2SMS_ALLOWED_RECIPIENT` + `FAST2SMS_TOTAL_BUDGET` (see README).
+  Fast2SMS requires one paid transaction of Rs 100+ before its API route works - the free
+  signup coupon is not enough (verified: the API rejects pre-billing until then), so a fresh
+  demo account stays on the mocked outbox unless the owner recharges:
   prepaid wallet, approx. Rs 7/SMS, real sends restricted to the allowed recipient,
   provider acceptance recorded honestly (`sent`, never fake `delivered`), mocked fallback
   on failure. Production India delivery needs a DLT-registered transactional route

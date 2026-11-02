@@ -1,4 +1,4 @@
-import { get, logAccess, run } from './db.js';
+import { get, insert, logAccess, run } from './db.js';
 
 // Real SMS delivery via Fast2SMS Quick SMS API (route=q), enabled only when
 // FAST2SMS_API_KEY is set. Without a key, or for any recipient other than the
@@ -28,34 +28,35 @@ export async function sendRealSms({ toMobile, body }) {
     await logAccess('system', null, 'sms_blocked_recipient', 'outbox', null, `real SMS blocked for ${toMobile} (not the allowed demo recipient)`);
     return { attempted: false, reason: 'recipient_not_allowed' };
   }
-  // Durable TOTAL budget (default 0 = no real sends). The claim is a single
-  // atomic INSERT...SELECT, consumed before the provider call and never
+  // Durable TOTAL budget (default 0 = no real sends). The claim is an atomic
+  // single-row UPDATE: the database row lock serializes concurrent claimants,
+  // so two simultaneous requests can never both pass (safe under Postgres
+  // read-committed). A claim is consumed before the provider call and never
   // released - one approved attempt means exactly one attempt, failure or not.
-  const claim = await run(
-    'INSERT INTO sms_real_claims (to_mobile, kind) SELECT ?, ? WHERE (SELECT COUNT(*) FROM sms_real_claims) < ?'
-  , [to, 'otp', cfg.totalBudget]);
+  const claim = await run('UPDATE sms_budget SET used = used + 1 WHERE id = 1 AND used < ?', [cfg.totalBudget]);
   if (!claim.changes) {
     await logAccess('system', null, 'sms_blocked_cap', 'outbox', null, `real SMS total budget (${cfg.totalBudget}) exhausted`);
     return { attempted: false, reason: 'budget_exhausted' };
   }
+  const claimId = await insert('INSERT INTO sms_real_claims (to_mobile, kind) VALUES (?,?)', [to, 'otp']);
   const url = `${API_URL}?authorization=${encodeURIComponent(cfg.key)}&route=q&message=${encodeURIComponent(body)}&numbers=${encodeURIComponent(to)}&flash=0`;
   try {
     const res = await fetchImpl(url, { signal: AbortSignal.timeout(10000) });
     const data = await res.json().catch(() => null);
     if (data && data.return === true) {
       await logAccess('system', null, 'sms_provider_accepted', 'outbox', null, `fast2sms accepted message to ${to} (request_id=${data.request_id ?? 'n/a'})`);
-      await run(`UPDATE sms_real_claims SET result=? WHERE id=(SELECT MAX(id) FROM sms_real_claims)`, [`accepted request_id=${data.request_id ?? 'n/a'}`]);
+      await run('UPDATE sms_real_claims SET result=? WHERE id=?', [`accepted request_id=${data.request_id ?? 'n/a'}`, claimId]);
       return { attempted: true, ok: true, providerStatus: `accepted request_id=${data.request_id ?? 'n/a'}` };
     }
     const msg = data && data.message != null
       ? (Array.isArray(data.message) ? data.message.join(', ') : String(data.message))
       : `http_${res.status}`;
     await logAccess('system', null, 'sms_provider_rejected', 'outbox', null, `fast2sms rejected message to ${to}: ${msg}`.slice(0, 300));
-    await run(`UPDATE sms_real_claims SET result=? WHERE id=(SELECT MAX(id) FROM sms_real_claims)`, [`rejected: ${msg}`.slice(0, 300)]);
+    await run('UPDATE sms_real_claims SET result=? WHERE id=?', [`rejected: ${msg}`.slice(0, 300), claimId]);
     return { attempted: true, ok: false, providerStatus: `rejected: ${msg}`.slice(0, 300) };
   } catch (e) {
     await logAccess('system', null, 'sms_provider_error', 'outbox', null, `fast2sms call failed: ${e.message}`.slice(0, 300));
-    await run(`UPDATE sms_real_claims SET result=? WHERE id=(SELECT MAX(id) FROM sms_real_claims)`, [`error: ${e.message}`.slice(0, 300)]);
+    await run('UPDATE sms_real_claims SET result=? WHERE id=?', [`error: ${e.message}`.slice(0, 300), claimId]);
     return { attempted: true, ok: false, providerStatus: `error: ${e.message}`.slice(0, 300) };
   }
 }

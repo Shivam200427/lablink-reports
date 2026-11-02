@@ -20,9 +20,15 @@ callback task for the front desk instead. One mobile number can cover a whole fa
   Fast2SMS Quick SMS sender exists for demos: set `FAST2SMS_API_KEY`,
   `FAST2SMS_ALLOWED_RECIPIENT` (10-digit Indian mobile; only this number can ever
   receive a real SMS), and `FAST2SMS_TOTAL_BUDGET` (default 0 = never send; each
-  send claims one slot atomically before the provider call and the slot is never
-  released, even on failure). Provider failures still record a mocked outbox copy
-  so the demo never stalls; real sends report provider acceptance, never delivery.
+  send claims one slot atomically (single-row, row-locked UPDATE) before the
+  provider call and the slot is never released, even on failure). Provider
+  failures still record a mocked outbox copy so the demo never stalls; real
+  sends report provider acceptance, never delivery. Note: Fast2SMS unlocks
+  its API route only after one paid transaction of Rs 100 or more - the free
+  signup coupon does not qualify (the API rejects pre-billing with exactly
+  that message). The staff console labels every message "mock" (simulated,
+  never left the box) or "provider" (really attempted), so a simulated
+  delivery is never mistaken for a real one.
 - Plain-language summaries use an AI provider when configured (`AI_API_KEY`, or a
   keyless `AI_BASE_URL` endpoint); every AI sentence is validated and falls back
   to locked templates when it throttles or fails validation. The live demo runs

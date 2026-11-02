@@ -21,6 +21,7 @@ beforeEach(() => {
   db.prepare('DELETE FROM otps').run();
   db.prepare('DELETE FROM access_log').run();
   db.prepare('DELETE FROM sms_real_claims').run();
+  db.prepare('UPDATE sms_budget SET used=0 WHERE id=1').run();
   delete process.env.FAST2SMS_API_KEY;
   delete process.env.FAST2SMS_ALLOWED_RECIPIENT;
   delete process.env.FAST2SMS_TOTAL_BUDGET;
@@ -102,6 +103,24 @@ describe('SMS provider adapter', () => {
     const r = await sendRealSms({ toMobile: ALLOWED, body: 'x' });
     expect(r.attempted).toBe(false);
     expect(r.reason).toBe('budget_exhausted');
+  });
+
+  it('concurrent requests cannot double-claim the single approved slot', async () => {
+    process.env.FAST2SMS_API_KEY = 'test-key';
+    process.env.FAST2SMS_ALLOWED_RECIPIENT = ALLOWED;
+    process.env.FAST2SMS_TOTAL_BUDGET = '1';
+    let calls = 0;
+    _setFetchForTests(async () => { calls++; return { status: 200, json: async () => ({ return: true, request_id: 'r' }) }; });
+    const [a, b] = await Promise.all([
+      sendRealSms({ toMobile: ALLOWED, body: 'x' }),
+      sendRealSms({ toMobile: ALLOWED, body: 'y' }),
+    ]);
+    expect(calls).toBe(1); // row-lock claim: exactly one of the two got through
+    expect([a.attempted, b.attempted].filter(Boolean)).toHaveLength(1);
+    expect([a.reason, b.reason]).toContain('budget_exhausted');
+    // raw SQL proof: a second atomic UPDATE finds used=1, claims nothing
+    const again = db.prepare('UPDATE sms_budget SET used = used + 1 WHERE id = 1 AND used < ?').run(1);
+    expect(again.changes).toBe(0);
   });
 
   it('blocks real sends when no allowed recipient is configured', async () => {

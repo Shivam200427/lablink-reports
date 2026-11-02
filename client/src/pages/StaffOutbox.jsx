@@ -4,9 +4,11 @@ import { api } from '../api.js';
 import { BrandHeader } from '../App.jsx';
 import { StaffNav } from './StaffLogin.jsx';
 
-// Whole-lab message log: every mocked WhatsApp/SMS/OTP with its simulated
-// delivery status. This is where front desk reads a patient's or doctor's
-// OTP in the demo (no real SMS leaves the box).
+// Whole-lab message log. Entries marked "mock" are simulated - no real
+// message ever left the box; "delivered" on a mock entry is the simulation
+// ticking, not a carrier receipt. Entries marked "provider" were attempted
+// via the real SMS provider and show the provider's own answer. This is
+// where front desk reads a patient's or doctor's OTP in the demo.
 export default function StaffOutbox() {
   const nav = useNavigate();
   const [messages, setMessages] = React.useState([]);
@@ -46,9 +48,10 @@ export default function StaffOutbox() {
           <div key={m.id} className="card py-3">
             <div className="flex items-center justify-between">
               <div className="min-w-0 text-sm text-slate-500">{m.to_mobile} · {m.channel} · {(m.created_at || '').slice(0, 16)}</div>
-              <span className={`chip ${m.status === 'delivered' ? 'bg-brand-100 text-brand-800' : m.status === 'failed' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>{m.status}</span>
+              <span className={`chip ${m.provider ? 'bg-sky-100 text-sky-800' : m.status === 'delivered' ? 'bg-brand-100 text-brand-800' : m.status === 'failed' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>{m.provider ? `provider · ${m.status}` : `mock · ${m.status}`}</span>
             </div>
             <div className="mt-1 break-words text-base text-slate-800">{m.body}</div>
+            {m.provider_status && <div className="mt-1 text-sm text-slate-500">provider said: {m.provider_status}</div>}
           </div>
         ))}
         {shown.length === 0 && <p className="text-base text-slate-500">No messages yet.</p>}

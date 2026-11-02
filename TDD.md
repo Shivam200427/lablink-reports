@@ -287,7 +287,9 @@ patient, status).
   sender (`server/sms.js`, env `FAST2SMS_API_KEY` / `FAST2SMS_ALLOWED_RECIPIENT` /
   `FAST2SMS_TOTAL_BUDGET`) sends real OTPs to the single allowed demo recipient only;
   provider acceptance is stored as `sent` (never auto-`delivered`), failures are stored
-  `failed` with a mocked fallback copy, and a total-send budget (default 0, claimed atomically before the provider call, never released) plus the existing per-mobile OTP
+  `failed` with a mocked fallback copy, and a total-send budget (default 0) enforced by an
+  atomic row-locked counter UPDATE claimed before the provider call and never released -
+  concurrent requests cannot double-claim - plus the existing per-mobile OTP
   rate limit bound wallet spend. Production rollout needs a DLT-registered transactional
   route. OTPs are read from the staff outbox in the demo.
 - **AI provider:** the demo is configured for Google's Gemini free tier and

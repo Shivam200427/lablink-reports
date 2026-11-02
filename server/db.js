@@ -123,6 +123,11 @@ CREATE TABLE IF NOT EXISTS outbox (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS sms_budget (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  used INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS sms_real_claims (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   to_mobile TEXT NOT NULL,
@@ -202,6 +207,11 @@ export async function initDB() {
     await pool.query("ALTER TABLE patients ADD COLUMN IF NOT EXISTS created_via TEXT NOT NULL DEFAULT 'lis'");
     await pool.query("ALTER TABLE outbox ADD COLUMN IF NOT EXISTS provider TEXT");
     await pool.query("ALTER TABLE outbox ADD COLUMN IF NOT EXISTS provider_status TEXT");
+    // seed the real-send budget counter from any pre-migration claims so an
+    // already-exhausted budget stays exhausted across the upgrade
+    await pool.query(`INSERT INTO sms_budget (id, used)
+      SELECT 1, (SELECT COUNT(*) FROM sms_real_claims)
+      WHERE NOT EXISTS (SELECT 1 FROM sms_budget WHERE id=1)`);
   } else {
     const { default: Database } = await import('better-sqlite3');
     sdb = new Database(path.join(DATA_DIR, 'lablink.db'));
@@ -210,6 +220,9 @@ export async function initDB() {
     sdb.exec(DDL);
     try { sdb.exec("ALTER TABLE patients ADD COLUMN created_via TEXT NOT NULL DEFAULT 'lis'"); }
     catch (e) { if (!/duplicate column/i.test(e.message)) throw e; }
+    sdb.exec(`INSERT INTO sms_budget (id, used)
+      SELECT 1, (SELECT COUNT(*) FROM sms_real_claims)
+      WHERE NOT EXISTS (SELECT 1 FROM sms_budget WHERE id=1)`);
     for (const col of ['provider', 'provider_status']) {
       try { sdb.exec(`ALTER TABLE outbox ADD COLUMN ${col} TEXT`); }
       catch (e) { if (!/duplicate column/i.test(e.message)) throw e; }
