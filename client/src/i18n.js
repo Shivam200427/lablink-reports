@@ -15,6 +15,7 @@ const D = {
   ready: { en: 'Ready', te: 'సిద్ధం', hi: 'तैयार' },
   viewReport: { en: 'View report', te: 'నివేదిక చూడండి', hi: 'रिपोर्ट देखें' },
   downloadPdf: { en: 'Download PDF report', te: 'PDF నివేదిక డౌన్‌లోడ్ చేయండి', hi: 'PDF रिपोर्ट डाउनलोड करें' },
+  summaryDisclaimer: { en: 'This is a simple explanation, not medical advice. Please see your full report and consult your doctor.', te: 'ఇది కేవలం సరళమైన వివరణ, వైద్య సలహా కాదు. దయచేసి మీ పూర్తి నివేదిక చూసి మీ డాక్టర్‌ను సంప్రదించండి.', hi: 'यह केवल सरल व्याख्या है, चिकित्सा सलाह नहीं। कृपया अपनी पूरी रिपोर्ट देखें और अपने डॉक्टर से परामर्श करें।' },
   summaryTitle: { en: 'Simple explanation', te: 'సరళమైన వివరణ', hi: 'सरल व्याख्या' },
   flagWrong: { en: 'This looks wrong', te: 'ఇది తప్పుగా అనిపిస్తోంది', hi: 'यह गलत लग रहा है' },
   flagged: { en: 'Thank you. Our team will review this explanation.', te: 'ధన్యవాదాలు. మా బృందం ఈ వివరణను పరిశీలిస్తుంది.', hi: 'धन्यवाद। हमारी टीम इस व्याख्या की समीक्षा करेगी।' },

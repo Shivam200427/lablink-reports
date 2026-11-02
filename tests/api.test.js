@@ -4,7 +4,7 @@ import request from 'supertest';
 process.env.DATA_DIR = '/tmp/lablink-test-' + Date.now();
 process.env.BASE_URL = 'http://localhost:3000';
 
-let app, db, signOffOrder, importCSV, flagResult, parseRange, findKBEntry, buildSummaryTexts, hashPassword;
+let app, db, signOffOrder, importCSV, flagResult, parseRange, findKBEntry, buildSummaryTexts, buildSummaryTextsWithAI, setAIClient, hashPassword;
 
 const agent = () => request.agent(app);
 async function lastOTP(mobile) {
@@ -27,7 +27,8 @@ beforeAll(async () => {
   ({ signOffOrder, importCSV } = await import('../server/lis.js'));
   ({ flagResult, parseRange } = await import('../server/flags.js'));
   ({ findKBEntry } = await import('../server/kb.js'));
-  ({ buildSummaryTexts } = await import('../server/summary.js'));
+  ({ buildSummaryTexts, buildSummaryTextsWithAI } = await import('../server/summary.js'));
+  ({ setAIClient } = await import('../server/ai.js'));
   ({ hashPassword } = await import('../server/crypto.js'));
   // minimal fixture
   db.prepare('INSERT INTO patients (full_name, age, sex, mobile) VALUES (?,?,?,?)').run('Test Patient', 60, 'F', '9800000001');
@@ -59,16 +60,42 @@ describe('flag rules', () => {
 });
 
 describe('summary engine safety', () => {
-  it('summarizes only out-of-range known tests', () => {
-    expect(buildSummaryTexts({ parameter: 'Haemoglobin', value: '10.2', unit: 'g/dL', reference_range: '12.0-15.5', flag: 'low' }).lang_en).toContain('haemoglobin');
+  it('summarizes only out-of-range known tests, short text with facts, no advice', () => {
+    const t = buildSummaryTexts({ parameter: 'Haemoglobin', value: '10.2', unit: 'g/dL', reference_range: '12.0-15.5', flag: 'low' });
+    expect(t.lang_en).toContain('below the normal range');
+    expect(t.lang_en).toContain('10.2');
+    expect(t.lang_en).toContain('12.0-15.5');
+    expect(t.lang_en.length).toBeLessThan(160);
+    expect(t.lang_en).not.toMatch(/medicine|exercise|diet|treatment/i);
     expect(buildSummaryTexts({ parameter: 'Potassium', value: '6.8', unit: 'mmol/L', reference_range: '3.5-5.1', flag: 'critical' })).toBeNull();
     expect(buildSummaryTexts({ parameter: 'Haemoglobin', value: '13', unit: 'g/dL', reference_range: '12.0-15.5', flag: 'normal' })).toBeNull();
     expect(buildSummaryTexts({ parameter: 'Obscure Analyte', value: '9', flag: 'high' })).toBeNull();
   });
   it('produces all three languages', () => {
     const t = buildSummaryTexts({ parameter: 'LDL Cholesterol', value: '142', unit: 'mg/dL', reference_range: '0-100', flag: 'high' });
-    expect(t.lang_te).toMatch(/కొలెస్ట్రాల్/);
-    expect(t.lang_hi).toMatch(/कोलेस्ट्रॉल/);
+    expect(t.lang_te).toMatch(/ఎక్కువగా/);
+    expect(t.lang_hi).toMatch(/अधिक/);
+    expect(t.engine).toBe('template');
+  });
+  it('uses validated AI output when a provider is configured', async () => {
+    setAIClient(async () => 'Your LDL cholesterol is above the normal range. Your value is 142 mg/dL; normal is 0-100 mg/dL.');
+    const t = await buildSummaryTextsWithAI({ parameter: 'LDL Cholesterol', value: '142', unit: 'mg/dL', reference_range: '0-100', flag: 'high' });
+    expect(t.engine).toBe('ai');
+    expect(t.lang_en).toContain('142');
+    setAIClient(null);
+  });
+  it('falls back to the locked template when AI output is unsafe or wrong', async () => {
+    setAIClient(async () => 'You should take medicine, change your diet and exercise daily.');
+    let t = await buildSummaryTextsWithAI({ parameter: 'LDL Cholesterol', value: '142', unit: 'mg/dL', reference_range: '0-100', flag: 'high' });
+    expect(t.engine).toBe('template');
+    expect(t.lang_en).toContain('above the normal range');
+    setAIClient(async () => 'This value is fine, nothing to see here.');
+    t = await buildSummaryTextsWithAI({ parameter: 'LDL Cholesterol', value: '142', unit: 'mg/dL', reference_range: '0-100', flag: 'high' });
+    expect(t.engine).toBe('template'); // missing the actual value -> rejected
+    setAIClient(async () => { throw new Error('provider down'); });
+    t = await buildSummaryTextsWithAI({ parameter: 'LDL Cholesterol', value: '142', unit: 'mg/dL', reference_range: '0-100', flag: 'high' });
+    expect(t.engine).toBe('template'); // provider error -> template
+    setAIClient(null);
   });
 });
 

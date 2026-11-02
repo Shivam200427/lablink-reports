@@ -45,7 +45,8 @@ export function ReportBody({ order, results, hasPdf, pdfUrl, lang, onFlag }) {
       </div>
       {summaries.length > 0 && (
         <div className="card">
-          <h3 className="mb-3 text-lg font-bold text-slate-900">{t(lang, 'summaryTitle')}</h3>
+          <h3 className="mb-1 text-lg font-bold text-slate-900">{t(lang, 'summaryTitle')}</h3>
+          <p className="mb-3 text-base leading-snug text-slate-500">{t(lang, 'summaryDisclaimer')}</p>
           <div className="space-y-4">
             {summaries.map((r) => (
               <div key={r.id} className="rounded-xl bg-brand-50 p-4">

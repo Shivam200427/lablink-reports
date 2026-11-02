@@ -1,6 +1,6 @@
 # LabLink - Technical Design Document
 
-**GitHub:** https://github.com/Shivam200427/lablink-reports
+**GitHub:** https://github.com/Shivam200427/lablink-reports (public; full source + commit history)
 **Live app:** not deployed publicly (submission constraint: no paid services; runs locally - see deployment.md for one-command setup and free-tier steps)
 
 **Product:** secure lab-report delivery for City Diagnostics ("Company A"), Vijayawada
@@ -58,7 +58,7 @@ PDF reports: pdfkit, generated at sign-off and on demand
   language switcher persisted per patient.
 - **Messaging:** `server/outbox.js` writes every WhatsApp/SMS/OTP to an `outbox` table and a
   ticker simulates send/delivered status. Swapping in MSG91/Twilio is a one-file change.
-- **Tests:** vitest integration suite (`tests/api.test.js`, 12 tests) boots the real app on
+- **Tests:** vitest integration suite (`tests/api.test.js`, 14 tests) boots the real app on
   a throwaway database.
 
 ## 5. Core flow
@@ -90,25 +90,39 @@ PDF reports: pdfkit, generated at sign-off and on demand
 | Critical values | Never summarised, and the message for a critical report tells the patient the lab will call. A callback task is created so no critical result is silently delivered. |
 | Secrets in repo | None. Synthetic demo data only; staff passwords are scrypt-hashed; salt is an env var. |
 
-## 7. Plain-language summary engine (and its safety rules)
+## 7. AI summary engine (and its safety rules)
 
-The brief encourages AI, but for a diagnostic context the design choice is **locked
-templates, not free generation**: every summary is produced from a reviewed knowledge base
-(`server/kb.js`) covering the common analytes in three languages (en/te/hi). A template
-never invents numbers - it quotes the patient's value and reference range from the database.
+Out-of-range values get a plain-language sentence written by an AI model
+(`server/ai.js`), wrapped in strict guardrails; a locked template is the safe
+floor underneath it.
 
-Safety rules, enforced in code and tested:
+**Provider configuration (honest):** any OpenAI-compatible chat API works.
+`AI_API_KEY` enables it; `AI_BASE_URL` (default api.openai.com) and `AI_MODEL`
+(default gpt-4o-mini) select the provider. With no key set - as in this free
+demo - the locked templates serve every summary and the record is marked
+`engine=template`. Nothing is faked: each summary row stores whether it came
+from `ai`, `ai+template` (partial fallback) or `template`.
 
-1. **Critical value -> no summary at all.** The result renders with its critical flag; a
-   callback task is created for the front desk instead.
-2. **Unknown analyte / no KB entry -> no summary.** The engine stays silent rather than
-   guess ("unsure" is handled by omission, not invention).
-3. **Every summary carries a disclaimer** ("simple explanation, not medical advice - consult
-   your doctor with the full report") and a link to the full report.
-4. **Patient can flag a summary as wrong.** Flags land in the staff console with status;
-   staff review and mark resolved. The flag event is access-logged.
-5. Values and ranges are compared on the **same unit scale** (e.g. WBC per µL), with unit
-   mismatches normalised at import.
+**Safety rules, enforced in code and tested:**
+
+1. **Critical value -> never sent to the AI, never summarised.** The result
+   renders with its critical flag and a callback task is created for the front
+   desk.
+2. **Unknown analyte / no KB entry -> no summary.** The engine stays silent
+   rather than guess.
+3. **Locked prompt:** the AI is instructed to write one short sentence saying
+   only that the test is above/below the normal range, quoting the exact value
+   and range, in the patient's language (en/te/hi) - no advice, no diagnosis,
+   no treatment.
+4. **Every AI output is validated** before it is stored (`validateAISummary`):
+   it must quote the exact result value, stay under 280 chars, and contain no
+   advice/medication/diet/treatment/diagnosis wording. Failure - or any
+   provider error - falls back to the locked template for that language.
+5. **Summaries are short by design** for elderly readers on small phones, and
+   the "simple explanation, not medical advice" disclaimer appears once per
+   report, not inside every summary.
+6. **Patient can flag a summary as wrong.** Flags land in the staff console;
+   staff review and resolve. The event is access-logged.
 
 ## 8. Data model (SQLite)
 
@@ -146,26 +160,42 @@ patient, status).
 
 ## 11. Testing
 
-`npm test` -> 12 vitest integration tests against the real app on a temp database, covering:
+`npm test` -> 14 vitest integration tests against the real app on a temp database, covering:
 flag rules (normal/high/low/critical), summary-engine safety (critical suppressed, unknown
 suppressed, disclaimer present, three languages), patient OTP login + consent + family
 scoping, the full sign-off pipeline (link + message + summaries + callback task), secure
 link flow (expiry, OTP gate, wrong OTP attempts), staff console (resend, task completion,
 flag review), and CSV import edge cases.
 
-## 12. Trade-offs and honest limitations
+## 12. Trade-offs, assumptions and honest limitations
 
-- **SQLite, not Postgres:** right for one branch and a demo; a multi-branch deployment
-  should move to Postgres (better-sqlite3 calls are isolated in `server/db.js`).
-- **Mocked messaging:** no real SMS/WhatsApp leaves the box (submission budget: no paid
-  services). The outbox proves the full pipeline; a provider plugs into one file.
-- **Template summaries, not an LLM:** chosen deliberately for safety and offline cost - no
-  hallucinated medical text, fully testable. The KB covers the analytes in scope; anything
-  else deliberately gets no summary.
+**Assumptions the lab must review before any real use:**
+
+- **Sample critical thresholds:** the critical limits in `server/kb.js` (e.g.
+  potassium, haemoglobin) are SAMPLE values chosen to exercise the critical
+  flow. They are NOT clinically approved - the pathologist must review and set
+  every threshold.
+- **Reference ranges come from the LIS CSV**, not from this app.
+- **Demo logins and all patient data are synthetic.**
+- **Stack choice** (Node/Express/SQLite/React) was made for simplicity and
+  zero-cost hosting; any equivalent stack would fit the brief.
+
+**Limitations:**
+
+- **SQLite, not Postgres:** right for one branch and a demo; a multi-branch
+  deployment should move to Postgres (better-sqlite3 calls are isolated in
+  `server/db.js`).
+- **Mocked messaging:** no real SMS/WhatsApp leaves the box (submission budget:
+  no paid services). The outbox proves the full pipeline; a provider plugs into
+  `server/outbox.js`. OTPs are read from the server log/outbox in the demo.
+- **AI needs a provider key in production:** without `AI_API_KEY` the locked
+  templates carry the summaries (fully tested); with a key, the AI path plus
+  validation takes over. No provider was paid for this submission.
+- **India data residency:** the demo host options in deployment.md are free
+  tiers outside India. A real deployment for Indian patient data should use an
+  India-region host (e.g. AWS Mumbai / Azure Central India); this submission
+  does not claim DPDP residency compliance.
 - **PDFs are functional, not branded** like the lab's printed letterhead.
-- **No public deployment:** a public URL needs a host with a persistent disk; deployment.md
-  has exact free-tier steps, and the app was verified end-to-end locally.
-- OTP delivery in the demo is read from the server log/outbox; in production it arrives by SMS.
 
 ## 13. If we had more time
 

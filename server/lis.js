@@ -100,7 +100,7 @@ export async function signOffOrder(orderId, signedBy = 'Duty Pathologist', actor
       .run(orderId, r.id, `Critical ${r.parameter}: ${r.value} ${r.unit ?? ''} (range ${r.reference_range ?? '-'})`);
     logAccess('system', null, 'callback_created', 'order', orderId, `critical ${r.parameter}`);
   }
-  const summaries = generateSummariesForOrder(orderId);
+  const summaries = await generateSummariesForOrder(orderId);
   const pdfPath = await generateReportPDF(order, patient, order.doctor_id ? db.prepare('SELECT * FROM doctors WHERE id=?').get(order.doctor_id) : null, results);
   logAccess(actor.type, actor.id, 'order_signed', 'order', orderId, `${order.order_code} -> ${status}; ${summaries} summaries`);
   return { ok: true, status, link, summaries, critical: critical.length, pdfPath };

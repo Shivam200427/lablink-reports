@@ -27,6 +27,19 @@ Tests: `npm test`
 | `DATA_DIR` | `./data` | Where the SQLite DB and generated PDFs live |
 | `BASE_URL` | `http://localhost:PORT` | Public base URL used inside report links - set this to the real https URL in production |
 | `PASSWORD_SALT` | `lablink-dev-salt` | Salt for staff password hashing - set a unique random value in production |
+| `AI_API_KEY` | _(unset)_ | Enables the AI summary engine. Unset = free demo mode using locked templates |
+| `AI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible chat API endpoint |
+| `AI_MODEL` | `gpt-4o-mini` | Model used for summaries |
+
+## 2b. Demo logins (synthetic data only, after `npm run seed`)
+
+| Role | Login |
+| --- | --- |
+| Patient | mobile `9000000001` (Lakshmi's family) or `9000000004` (Srinivas & Padma) - OTP appears in the server log and the staff console's Messages view |
+| Front desk | username `frontdesk`, password `Lab@2026` |
+| Doctor | mobile `9000000020` (Dr. P. Anitha) - OTP login |
+| Lab owner / ops | username `ops`, password `Ops@2026` |
+| Pathologist (import + sign-off) | username `patho`, password `Patho@2026` |
 
 ## 3. Deploy on a free tier (example: Render)
 
@@ -43,11 +56,22 @@ Tests: `npm test`
 The same steps work on Railway, Fly.io or a small VM (`npm ci && npm run build && npm start`
 behind any HTTPS reverse proxy).
 
-## 4. Production checklist (what a real rollout still needs)
+## 4. India data residency note
+
+The free-tier hosts above run outside India. For real Indian patient data,
+deploy in an India region (e.g. AWS `ap-south-1` Mumbai or Azure Central
+India) so reports and phone numbers stay in-country. This demo does not claim
+DPDP residency compliance.
+
+## 5. Production checklist (what a real rollout still needs)
 
 - HTTPS in front of the app (links and OTPs must never travel over plain HTTP).
 - A real SMS/WhatsApp provider (e.g. MSG91/Twilio) replacing the mocked outbox - the
   integration point is `server/outbox.js`.
 - Set a strong unique `PASSWORD_SALT` and rotate the demo staff passwords.
 - A persistent volume for `DATA_DIR` plus database backups.
+- An AI provider key (`AI_API_KEY`) if AI-written summaries are wanted; without
+  it the tested locked templates serve summaries at zero cost.
+- The lab's pathologist must review the SAMPLE critical thresholds in
+  `server/kb.js` before real use.
 - Postgres instead of SQLite if multiple lab branches ever share one deployment.
