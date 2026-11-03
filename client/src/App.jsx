@@ -20,14 +20,33 @@ import DoctorReports from './pages/DoctorReports.jsx';
 export const LangCtx = React.createContext({ lang: 'en', setLang: () => {} });
 
 export function LangPicker({ lang, setLang }) {
-  return (
-    <div className="flex gap-1 rounded-xl border border-slate-200 bg-white p-1 text-sm font-medium">
-      {[['en', 'EN'], ['te', 'తెలుగు'], ['hi', 'हिंदी']].map(([k, label]) => (
-        <button key={k} onClick={() => setLang(k)}
-          className={`rounded-lg px-3 py-1.5 ${lang === k ? 'bg-brand-700 text-white' : 'text-slate-600'}`}>{label}</button>
-      ))}
-    </div>
-  );
+  const [open, setOpen] = React.useState(false);
+  const root = React.useRef(null), trigger = React.useRef(null), first = React.useRef(null);
+  const id = React.useId();
+  const choices = [['en', 'English'], ['te', 'తెలుగు'], ['hi', 'हिंदी']];
+  const close = () => { setOpen(false); trigger.current?.focus(); };
+  React.useEffect(() => {
+    if (!open) return;
+    first.current?.focus();
+    const outside = (e) => { if (!root.current?.contains(e.target)) setOpen(false); };
+    const escape = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
+  }, [open]);
+  return <div ref={root} className="relative" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false); }}>
+    <button ref={trigger} type="button" aria-label="Change language" aria-expanded={open} aria-controls={id}
+      onClick={() => setOpen(!open)} className="flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+      <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18M5 7h14M5 17h14"/></svg>
+      <span>{choices.find(([k]) => k === lang)?.[1] || 'English'}</span><span aria-hidden="true">⌄</span>
+    </button>
+    {open && <div id={id} role="group" aria-label="Choose language" className="absolute right-0 z-50 mt-2 w-52 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+      {choices.map(([k,label],i) => <button ref={i === 0 ? first : undefined} key={k} type="button" lang={k} aria-pressed={lang === k}
+        onClick={() => { setLang(k); close(); }} className={`flex min-h-12 w-full items-center justify-between rounded-lg px-4 py-3 text-left text-base font-semibold ${lang === k ? 'bg-brand-700 text-white' : 'text-slate-700 hover:bg-slate-100'}`}>
+        <span>{label}</span>{lang === k && <span aria-hidden="true">✓</span>}
+      </button>)}
+    </div>}
+  </div>;
 }
 
 export function BrandHeader({ right }) {
