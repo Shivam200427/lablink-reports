@@ -67,7 +67,7 @@ PDF reports: pdfkit, generated at sign-off and on demand (cached file, regenerat
   bouncing to sign-in. Staff and doctor consoles are English-only and carry no switcher.
 - **Messaging:** `server/outbox.js` writes every WhatsApp/SMS/OTP to an `outbox` table and a
   ticker simulates send/delivered status. A real provider needs a durable dispatch worker, provider configuration and delivery-receipt handling.
-- **Tests:** 61 vitest integration tests (`tests/`: api, security, resilience, sms, liswatch) boot the
+- **Tests:** 76 vitest integration tests (`tests/`: api, security, resilience, sms, liswatch) boot the
   real app on a throwaway database.
 
 ## 5. Core flow
@@ -245,12 +245,14 @@ lab-asserted and self-registered records) - `sms_budget` + `sms_real_claims`
 
 ## 12. Testing
 
+The November 3 QA pass added report-release guards, summary-flag ownership, atomic OTP consumption, strict input errors, safe CSV identifiers/status checks and csv-parse 7.0.3. HTTPS BASE_URL sets Secure on HttpOnly/SameSite=Lax cookies; local HTTP remains usable. Production dependency audit reports zero known advisories at this check, not a security certification.
+
 Messages render UTC event timestamps in India Standard Time with an explicit IST label; the stored event time and audit ordering are not rewritten. Three date tests cover UTC, midnight rollover and explicit offsets.
 
 Signed CSV exports use a single database transaction for row ingestion and release. All rows are loaded before link/message/summary/callback creation. Exact repeats are ignored, amended signed results are held, and a failed release rolls back for retry. PostgreSQL uses a transaction-level import advisory lock and an order row lock. The mocked outbox is transactional; a future real provider needs a durable dispatch worker. PDF cache files are outside the database transaction and can leave replaceable orphan files on a failed attempt.
 
 
-`npm test` -> **61 vitest integration tests** against the real app on a temp database:
+`npm test` -> **76 vitest integration tests** against the real app on a temp database:
 
 - `tests/api.test.js` (32): flag rules (normal/high/low/critical), summary-engine
   safety (critical suppressed, unknown suppressed, disclaimer present, three
@@ -271,7 +273,11 @@ Signed CSV exports use a single database transaction for row ingestion and relea
   completion, flag review), CSV import edge cases, manual front-desk order entry (create -> sign-off ->
   patient portal delivery, front-desk attachment to a self-registered account, role +
   input validation), and lab-verified delegation (grant/revoke, one patient only).
-- `tests/import-ready.test.js` (5): mixed-row Ready export release, repeat idempotence, changed signed results held, failed release rollback/retry, and incomplete orders held.
+- `tests/import-ready.test.js` (8): mixed-row Ready export release, repeat idempotence, changed signed results held, failed release rollback/retry, and incomplete orders held.
+- `tests/qa-adversarial.test.js` (5): concurrent OTP one-time consume, strict age, malformed/oversize JSON, invalid routes/injection-shaped input, expiry/purpose.
+- `tests/qa-boundaries.test.js` (3): concurrent desk orders, conservative numeric/range parsing, empty signoff refusal.
+- `tests/cookie.test.js` (2): isolated HTTP/HTTPS configuration, matching login/logout cookies and revoked sessions.
+- `tests/security.test.js` (9): anonymous and cross-patient denial, release/PDF guards, secure-link scope, OTP limits, flags and review roles.
 - `tests/dates.test.js` (3): Messages UTC-to-IST display, midnight date rollover and explicit offsets.
 - `tests/pdf-signoff.test.js` (1): first PDF gets persisted signer/time.
 - `tests/sms.test.js` (8) - the optional real-sender path: mock by default, the
