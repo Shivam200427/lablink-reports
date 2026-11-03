@@ -9,6 +9,10 @@
 // (datetime('now') variants and ? placeholders) for Postgres.
 import fs from 'node:fs';
 import path from 'node:path';
+import { AsyncLocalStorage } from 'node:async_hooks';
+const txContext = new AsyncLocalStorage();
+let txQueue = Promise.resolve();
+const connection = () => txContext.getStore() || pool;
 
 export const isPostgres = !!process.env.DATABASE_URL;
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
@@ -338,24 +342,47 @@ export async function initDB() {
   }
 }
 
+// One transaction owns a complete import/sign-off. Nested work shares its connection.
+export async function transaction(work) {
+  if (txContext.getStore()) return work();
+  let release;
+  const before = txQueue;
+  txQueue = new Promise(r => { release = r; });
+  await before;
+  const c = isPostgres ? await pool.connect() : sdb;
+  try {
+    if (isPostgres) await c.query('BEGIN'); else c.exec('BEGIN');
+    const result = await txContext.run(c, work);
+    if (isPostgres) await c.query('COMMIT'); else c.exec('COMMIT');
+    return result;
+  } catch (e) {
+    if (isPostgres) await c.query('ROLLBACK'); else c.exec('ROLLBACK');
+    throw e;
+  } finally { if (isPostgres) c.release(); release(); }
+}
+
 export async function all(sql, params = []) {
-  if (isPostgres) return (await pool.query(pgify(sql), params)).rows;
+  if (!txContext.getStore()) await txQueue;
+  if (isPostgres) return (await connection().query(pgify(sql), params)).rows;
   return sdb.prepare(sql).all(params);
 }
 
 export async function get(sql, params = []) {
-  if (isPostgres) return (await pool.query(pgify(sql), params)).rows[0];
+  if (!txContext.getStore()) await txQueue;
+  if (isPostgres) return (await connection().query(pgify(sql), params)).rows[0];
   return sdb.prepare(sql).get(params);
 }
 
 export async function run(sql, params = []) {
-  if (isPostgres) { const r = await pool.query(pgify(sql), params); return { changes: r.rowCount }; }
+  if (!txContext.getStore()) await txQueue;
+  if (isPostgres) { const r = await connection().query(pgify(sql), params); return { changes: r.rowCount }; }
   return sdb.prepare(sql).run(params);
 }
 
 // INSERT and return the new row id (Postgres: appends RETURNING id).
 export async function insert(sql, params = []) {
-  if (isPostgres) return Number((await pool.query(pgify(sql) + ' RETURNING id', params)).rows[0].id);
+  if (!txContext.getStore()) await txQueue;
+  if (isPostgres) return Number((await connection().query(pgify(sql) + ' RETURNING id', params)).rows[0].id);
   return Number(sdb.prepare(sql).run(params).lastInsertRowid);
 }
 

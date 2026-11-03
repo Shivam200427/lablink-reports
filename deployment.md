@@ -1,6 +1,6 @@
 # LabLink - Deployment
 
-**Live demo instance:** https://lablink-reports.onrender.com (Render free tier, Singapore; sleeps when idle - first load can take ~50s; data persists on Render's free Postgres until its 2026-12-02 expiry). The steps below are exactly how it was deployed, and how to reproduce it.
+**India demo:** https://lablink-reports.getvoroa.com (Voroa app and managed PostgreSQL in Mumbai, verified November 3, 2026). **Parallel fallback:** https://lablink-reports.onrender.com (Render, Singapore). Both remain live; no cutover or Render shutdown has been made.
 
 LabLink is a single Node.js process that serves the API and the built React client.
 Locally it stores everything in SQLite on disk; when `DATABASE_URL` is set it uses
@@ -33,7 +33,7 @@ Tests: `npm test`
 | `AI_REASONING_EFFORT` | _(unset)_ | Optional provider hint; `none` disables Gemini's hidden reasoning (needed for short summaries) |
 | `BASE_URL` | `http://localhost:PORT` | Public base URL used inside report links - set this to the real https URL in production |
 | `PASSWORD_SALT` | `lablink-dev-salt` | Salt for staff password hashing - set a unique random value in production |
-| `AI_API_KEY` | _(unset)_ | Key for a paid/production AI provider. Unset = free demo mode using locked templates |
+| `AI_API_KEY` | _(unset)_ | Provider key. Without an enabled provider, summaries use locked templates |
 | `AI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible chat API endpoint. The demo used Google's Gemini free tier (see the TDD); keyless endpoints were tried and dropped as unreliable |
 | `AI_MODEL` | `gpt-4o-mini` | Model used for summaries |
 
@@ -41,7 +41,7 @@ Tests: `npm test`
 
 | Role | Login |
 | --- | --- |
-| Patient | mobile `9000000001` (Lakshmi's family) or `9000000004` (Srinivas & Padma) - OTP appears in the server log and the staff console's Messages view. These seeded families log in through system/demo fixture grants (labeled as such in the console, never attributed to a staff member); any patient created later - by import or walk-in - can log in only after the front desk verifies their contact number |
+| Patient | mobile `9000000001` (Lakshmi's family) or `9000000004` (Srinivas & Padma) - OTP appears in the staff console's Messages view. These seeded families log in through system/demo fixture grants (labeled as such in the console, never attributed to a staff member); any patient created later - by import or walk-in - can log in only after the front desk verifies their contact number |
 | Front desk | username `frontdesk`, password `Lab@2026` |
 | Doctor | mobile `9100000002` (Dr. P. Anitha) - OTP login |
 | Lab owner / ops | username `ops`, password `Ops@2026` |
@@ -52,8 +52,7 @@ Tests: `npm test`
 1. Push this repo to GitHub.
 2. In Render: New > Web Service > connect the repo.
 3. Build command: `npm install && npm run build`
-4. Start command: `npm run seed && npm start`
-   (`seed` only seeds an EMPTY database; pass `--wipe` to force a fresh demo fixture.)
+4. Start command: `npm start`. Import or seed synthetic data explicitly before first use; never run a destructive reseed on an existing database.
 5. Create a free Render Postgres (Singapore, 1 GB, no card) and set `DATABASE_URL`
    to its **internal** connection string so the web service reaches it over Render's
    private network. Free Postgres expires 30 days after creation (14-day grace
@@ -110,3 +109,20 @@ and phone numbers stay in-country.
   the LIS can write to (e.g. a small on-prem box) for unattended imports.
 - Postgres instead of SQLite if multiple lab branches ever share one deployment
   (the demo already runs on Postgres; local runs use SQLite).
+
+## Current Voroa deployment
+
+- Runtime: Node.js; build `npm install && npm run build`; start `npm start`.
+- Health path `/api/health` confirms the server responds. Live login/data-flow checks are separate from that shallow liveness response.
+- App and PostgreSQL are in Mumbai. `DATABASE_URL` points to managed PostgreSQL with TLS. `BASE_URL` is the Voroa URL above.
+- `PASSWORD_SALT` matches the imported synthetic staff hashes. AI provider variables are configured; validated AI output falls back to locked templates on error or unsafe output.
+- FAST2SMS variables were not copied to Voroa. All notifications/OTPs there stay in the mocked Messages outbox; nothing is sent to a real phone.
+- Database import was independently checked before later user/test activity: 17 patients, 19 orders, 63 results and 35 summaries, with the erased record absent across all 18 tables. Later records are not part of that restore baseline.
+- Git-URL deployments do not auto-deploy on push: trigger a redeploy after updating this repository. Render still auto-deploys the main branch.
+- The free service sleeps when idle. A temporary public-health check every 10 minutes is arranged through November 18, 2026, 15:38 IST. It is not an uptime guarantee or part of the product's architecture.
+- App and database share 750 free running hours per month. Continuous use of both consumes about 720 pooled hours in 15 days. No paid plan or payment method was added.
+- Filesystem storage is ephemeral. PDFs regenerate from PostgreSQL after a restart; unprocessed CSV files in the watch folder do not have durable storage. Folder arrivals do not wake a sleeping app. The free Render demo has the same sleep/ephemeral-file limitation.
+- The watcher polls `data/lis-incoming` every 5 seconds while the process runs. Production needs a durable LIS handoff and an always-running worker; this demo does not alter the client's LIS or ingest its real signed PDFs.
+- A Ready/signed CSV order is released only after its rows are loaded: one expiring link, mocked message, summaries or critical callback. Exact repeated rows are ignored; changed already-signed results are held for an amended-report workflow. Database release failure rolls back the transaction so a retry does not duplicate links/messages/callbacks.
+
+Current provider constraints were checked against https://getvoroa.com/docs/free-instances/ and https://getvoroa.com/docs/idle-sleep/ on November 3, 2026. Render free constraints: https://render.com/docs/free. These demo facts are not a legal/compliance certification or an assertion about production readiness.

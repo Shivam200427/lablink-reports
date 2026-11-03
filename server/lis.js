@@ -1,5 +1,5 @@
 import { parse } from 'csv-parse/sync';
-import { all, get, run, insert, logAccess } from './db.js';
+import { all, get, run, insert, logAccess, transaction, isPostgres } from './db.js';
 import { flagResult } from './flags.js';
 import { findKBEntry } from './kb.js';
 import { randomToken, sha256, addHours, now } from './crypto.js';
@@ -12,6 +12,13 @@ const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 function norm(h) { return String(h || '').trim().toLowerCase().replace(/[^a-z]/g, ''); }
 
 export async function importCSV(text, actor = { type: 'staff', id: null }) {
+  return transaction(() => importCSVTransaction(text, actor));
+}
+async function importCSVTransaction(text, actor) {
+  // Serialize imports across app processes too, so repeats cannot duplicate rows.
+  if (isPostgres) await get('SELECT pg_advisory_xact_lock(7120401)');
+  const readyOrders = new Set();
+  const heldOrders = new Set();
   const rows = parse(text, { columns: true, skip_empty_lines: true, trim: true });
   const report = { rows: rows.length, ordersTouched: new Set(), newOrders: 0, newPatients: 0, signedOff: 0, errors: [] };
   for (const [i, row] of rows.entries()) {
@@ -31,6 +38,7 @@ export async function importCSV(text, actor = { type: 'staff', id: null }) {
       if (!['M', 'F', 'O'].includes(sex)) sex = null;
       const unit = r.unit || null;
       if (!orderCode || !patientName || !parameter || value == null) {
+        if (orderCode) heldOrders.add(orderCode);
         report.errors.push(`row ${i + 2}: missing order/patient/parameter/result`);
         continue;
       }
@@ -51,6 +59,7 @@ export async function importCSV(text, actor = { type: 'staff', id: null }) {
       } else {
         const named = (await all("SELECT * FROM patients WHERE created_via='lis' AND merged_into IS NULL AND lower(trim(full_name))=lower(trim(?))", [patientName]));
         if (named.length > 1) {
+          heldOrders.add(orderCode);
           report.errors.push(`row ${i + 2}: ambiguous patient name '${patientName}' (${named.length} lab records share it) - row held; include Mobile in the export to identify the patient`);
           continue;
         }
@@ -84,17 +93,35 @@ export async function importCSV(text, actor = { type: 'staff', id: null }) {
       }
       let order = (await get('SELECT * FROM orders WHERE order_code=?', [orderCode]));
       if (!order) {
-        const st = /critical/i.test(status) ? 'ready_critical' : /ready|signed/i.test(status) ? 'ready' : 'processing';
+        const st = 'processing'; // All rows must land before a signed export is released.
         const oid = await insert('INSERT INTO orders (order_code, patient_id, doctor_id, status) VALUES (?,?,?,?)', [orderCode, patient.id, doctor?.id ?? null, st]);
         order = (await get('SELECT * FROM orders WHERE id=?', [oid]));
         report.newOrders++;
+      }
+      if (/ready|signed|critical/i.test(status)) readyOrders.add(orderCode);
+      // Already signed orders are immutable. Exact repeats are safe; corrections
+      // need an explicit amended-report workflow, not a silent second release.
+      const existing = await get("SELECT * FROM results WHERE order_id=? AND parameter=? AND value=? AND COALESCE(unit,'')=? AND COALESCE(reference_range,'')=?", [order.id, parameter, String(value), unit || '', range || '']);
+      if (existing) continue;
+      if (order.signed_at) {
+        heldOrders.add(orderCode);
+        report.errors.push(`row ${i + 2}: signed order ${orderCode} differs; use an amended-report workflow`);
+        continue;
       }
       const kb = findKBEntry(parameter);
       const flag = flagResult(value, range, kb);
       (await run('INSERT INTO results (order_id, parameter, unit, value, reference_range, flag) VALUES (?,?,?,?,?,?)', [order.id, parameter, unit, String(value), range, flag]));
     } catch (e) {
-      report.errors.push(`row ${i + 2}: ${e.message}`);
+      throw new Error(`row ${i + 2}: ${e.message}`); // Roll back DB failures; retry the complete file safely.
     }
+  }
+  for (const code of readyOrders) {
+    if (heldOrders.has(code)) continue;
+    const o = await get('SELECT * FROM orders WHERE order_code=?', [code]);
+    if (o.signed_at) continue;
+    const signed = await signOffOrder(o.id, 'LIS signed export', actor);
+    if (signed.error) throw new Error(`sign-off ${code}: ${signed.error}`);
+    report.signedOff++;
   }
   await logAccess(actor.type, actor.id, 'lis_import', 'orders', null, `${report.rows} rows, ${report.newOrders} new orders`);
   return { ...report, ordersTouched: report.ordersTouched.size };
@@ -103,9 +130,12 @@ export async function importCSV(text, actor = { type: 'staff', id: null }) {
 // Sign-off: pathologist signs -> status flips, secure 72h link created,
 // mocked WhatsApp goes out, summaries generated, critical results raise callbacks.
 export async function signOffOrder(orderId, signedBy = 'Duty Pathologist', actor = { type: 'system', id: null }) {
-  const order = (await get('SELECT * FROM orders WHERE id=?', [orderId]));
+  return transaction(() => signOffTransaction(orderId, signedBy, actor));
+}
+async function signOffTransaction(orderId, signedBy, actor) {
+  const order = (await get('SELECT * FROM orders WHERE id=?' + (isPostgres ? ' FOR UPDATE' : ''), [orderId]));
   if (!order) return { error: 'not_found' };
-  if (order.status !== 'processing') return { error: 'already_signed' };
+  if (order.signed_at) return { error: 'already_signed' };
   const results = (await all('SELECT * FROM results WHERE order_id=?', [orderId]));
   const critical = results.filter(r => r.flag === 'critical');
   const status = critical.length ? 'ready_critical' : 'ready';
