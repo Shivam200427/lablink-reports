@@ -4,7 +4,7 @@
 **Live app:** https://lablink-reports.onrender.com (free Render demo, Singapore region; sleeps when idle so the first load can take ~50s. Demo data lives on Render's free Postgres (1 GB, expires 2026-12-02, no card) and survives restarts until then; a one-command reseed resets it. No paid services used.)
 
 **Product:** secure lab-report delivery for Company A, Vijayawada ("LabLink" is a demo brand name chosen for this submission)
-**Author:** Shivam Jain, built with AI assistance (the brief encourages AI) - **Date:** 2 November 2026 - **Stack:** Node.js 22 / Express / SQLite locally, Postgres on the demo host - React 19 / Vite / Tailwind
+**Author:** Shivam Jain, built with AI assistance (the brief encourages AI) - **Date:** 3 November 2026 - **Stack:** Node.js 22 / Express / SQLite locally, Postgres on the demo host - React 19 / Vite / Tailwind
 
 ---
 
@@ -147,8 +147,8 @@ app's own code against the real Gemini API: real validated AI sentences,
 including Telugu, stored as `engine=ai`. A 503 "high demand" from Gemini was
 observed once and the app fell back to the locked template by design - the
 safety floor working as intended. Gemini's free tier trains on submitted
-content, so only synthetic demo data is ever sent - a real deployment needs a
-paid, compliant provider (`AI_API_KEY`), none was paid for this submission.
+content, so only synthetic demo data is ever sent. No provider was paid for
+this submission.
 The earlier keyless-endpoint configuration (pollinations.ai) was replaced:
 its provider calls never succeeded at verification time. Every summary row
 stores `engine=ai`, `ai+template` or `template`, visible on the staff
@@ -336,7 +336,7 @@ endpoint) before the build is called ready.
   (1 GB, Singapore, no card) which **expires 2026-12-02** (30 days after
   creation, 14-day grace period before deletion). Before that date the demo
   must be re-pointed at a fresh database or back to SQLite, or the service
-  starts failing. Real/multi-branch use needs a paid, managed Postgres.
+  starts failing.
 - **Messaging, mocked by default:** no real SMS/WhatsApp leaves the box unless explicitly
   enabled. The outbox proves the full pipeline. An optional demo-grade Fast2SMS Quick SMS
   sender (`server/sms.js`, env `FAST2SMS_API_KEY` / `FAST2SMS_ALLOWED_RECIPIENT` /
@@ -351,14 +351,11 @@ endpoint) before the build is called ready.
   the full AI path was proven end-to-end against the real API (validated
   `engine=ai` sentences, including Telugu). Gemini's free tier trains on
   submitted content, so only synthetic demo data is sent; a transient 503
-  was observed and the locked template took over, by design. Production
-  should use a paid, compliant provider via `AI_API_KEY` - no provider was
-  paid for this submission.
-- **India hosting, unmet:** the brief asks for hosting in India. The demo host's
-  free tiers run outside India (Render has no India region on any plan), so this
-  constraint is openly unmet on this demo and no residency or legal-compliance
-  claim is made. A real deployment for Indian patient data should use an
-  India-region host (e.g. AWS Mumbai / Azure Central India).
+  was observed and the locked template took over, by design. No provider
+  was paid for this submission.
+- **India hosting, unmet:** the brief asks for hosting in India. This demo runs
+  in the host's Singapore region, so the constraint is openly unmet on this demo
+  and no residency or legal-compliance claim is made.
 - **PDFs are functional, not branded** like the lab's printed letterhead.
 - **LIS folder watch is host-dependent:** the app watches a folder
   (`LIS_WATCH_DIR`, default `<data dir>/lis-incoming`) and imports dropped CSV
