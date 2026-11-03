@@ -235,7 +235,9 @@ export async function initDB() {
     const { default: pg } = await import('pg');
     // Render Postgres requires SSL on its EXTERNAL hostname; the internal
     // service-to-service hostname is plaintext on Render's private network.
-    const ssl = /\.render\.com/.test(process.env.DATABASE_URL) ? { rejectUnauthorized: false } : undefined;
+    // Voroa (India host) also requires TLS on its external endpoint. Note: an
+    // explicit ssl:undefined would erase the URL's sslmode, so match by host.
+    const ssl = /\.(render|getvoroa)\.com/.test(process.env.DATABASE_URL) ? { rejectUnauthorized: false } : undefined;
     pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl });
     await pool.query(DDL_PG);
     // migration for databases created before created_via existed
