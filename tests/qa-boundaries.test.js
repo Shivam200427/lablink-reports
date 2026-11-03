@@ -20,3 +20,15 @@ it('empty order cannot be signed and published',async()=>{
  expect((await signOffOrder(oid,'QA')).error).toBe('no_results');
  expect(db.prepare('SELECT signed_at FROM orders WHERE id=?').get(oid).signed_at).toBeNull();
 });
+it('doctor direct access excludes processing, old and foreign assignments',async()=>{
+ const did=Number(db.prepare("INSERT INTO doctors(full_name,mobile) VALUES('QA Doctor','9600000082')").run().lastInsertRowid);
+ const pid=db.prepare('SELECT id FROM patients LIMIT 1').get().id;
+ const ids=[];
+ for(const [code,status,signed,doctor] of [['ORD-DOC-P','processing',null,did],['ORD-DOC-OLD','ready','2000-01-01 00:00:00',did],['ORD-DOC-OTHER','ready',new Date().toISOString().replace('T',' ').slice(0,19),null],['ORD-DOC-NEW','ready',new Date().toISOString().replace('T',' ').slice(0,19),did]])ids.push(Number(db.prepare('INSERT INTO orders(order_code,patient_id,doctor_id,status,signed_at) VALUES(?,?,?,?,?)').run(code,pid,doctor,status,signed).lastInsertRowid));
+ const a=request.agent(app);await a.post('/api/auth/doctor/request-otp').send({mobile:'9600000082'});
+ const code=db.prepare("SELECT body FROM outbox WHERE to_mobile='9600000082' ORDER BY id DESC LIMIT 1").get().body.match(/OTP is (\d{6})/)[1];
+ expect((await a.post('/api/auth/doctor/verify').send({mobile:'9600000082',code})).status).toBe(200);
+ for(const id of ids.slice(0,3))expect((await a.get('/api/doctor/orders/'+id)).status).toBe(404);
+ expect((await a.get('/api/doctor/orders/'+ids[3])).status).toBe(200);
+ const list=await a.get('/api/doctor/reports');expect(list.body.reports.map(x=>x.id)).toEqual([ids[3]]);
+});
