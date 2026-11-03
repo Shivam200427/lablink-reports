@@ -296,17 +296,6 @@ in the shared dialect (`substr()`, `AS` aliases, positional GROUP BY) to keep
 both engines happy; a CI job against real Postgres is future work. After every
 deploy the live API is smoke-checked directly (auth, each role, the report
 endpoint) before the build is called ready.
-- `tests/security.test.js` (7) - the security review, executable:
-  role isolation (401 with no session, 403 with the wrong role); IDOR - a
-  patient session cannot read another mobile's order, and a link-verified
-  session is scoped to exactly one order (patient portal and other links
-  reject it); OTP brute-force lockout (5 attempts) and request rate limiting;
-  unknown link tokens return 404 with no data; an **expired** link returns 410,
-  cannot request or verify an OTP, and its report/PDF stay closed even with a
-  previously verified session; sign-off is idempotent; unauthorized PDF
-  download is rejected; the weekly sample returns at most 50 rows and records
-  reviews.
-
 ## 13. Trade-offs, assumptions and honest limitations
 
 **Open requirement gap:** the brief asks for consent at registration. The demo saves an empty registration before OTP and asks existing consent on verified access. Moving consent before saving details remains a user decision; this is not claimed as a requirements pass.
