@@ -309,6 +309,8 @@ endpoint) before the build is called ready.
 
 ## 13. Trade-offs, assumptions and honest limitations
 
+**Open requirement gap:** the brief asks for consent at registration. The demo saves an empty registration before OTP and asks existing consent on verified access. Moving consent before saving details remains a user decision; this is not claimed as a requirements pass.
+
 **Assumptions the lab must review before any real use:**
 
 - **Family access is grant-based, never phone-possession-based:** a login with a
