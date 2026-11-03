@@ -37,4 +37,15 @@ describe('signed LIS export pipeline',()=>{
   const r=await importCSV(h+row('ORD-IMP4','Potassium','4.1')+'ORD-IMP4,Import Test,9000000096,,4.2,mmol/L,3.5-5.1,Ready\n');
   expect(r.signedOff).toBe(0);expect(r.errors.length).toBe(1);const o=db.prepare("SELECT * FROM orders WHERE order_code='ORD-IMP4'").get();expect(o.signed_at).toBeNull();
  });
+ it('holds an existing order row naming a different patient',async()=>{
+  const r=await importCSV(h+'ORD-IMP2,Different Person,9000000088,Potassium,8,mmol/L,3.5-5.1,Ready\n');
+  expect(r.errors.join()).toContain('patient mismatch');expect(r.signedOff).toBe(0);
+  expect(db.prepare("SELECT COUNT(*) n FROM results WHERE order_id=(SELECT id FROM orders WHERE order_code='ORD-IMP2')").get().n).toBe(1);
+ });
+ it('does not release Unready or Unsigned status by substring',async()=>{
+  const r=await importCSV(h+row('ORD-IMP5','Potassium','4.0','Unready')+row('ORD-IMP6','Potassium','4.0','Unsigned'));expect(r.signedOff).toBe(0);
+ });
+ it('holds path-shaped order codes and blank values before file generation',async()=>{
+  const r=await importCSV(h+row('../escape','Potassium','4')+row('ORD-EMPTY','Potassium',''));expect(r.errors).toHaveLength(2);expect(r.newOrders).toBe(0);
+ });
 });

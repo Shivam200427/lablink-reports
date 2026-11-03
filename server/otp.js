@@ -43,7 +43,10 @@ export async function verifyOTP(mobile, code, purpose = 'login', { consume = tru
     (await run('UPDATE otps SET attempts=attempts+1 WHERE id=?', [row.id]));
     return { error: 'wrong_code' };
   }
-  if (consume) (await run('UPDATE otps SET consumed_at=? WHERE id=?', [now(), row.id]));
+  if (consume) {
+    const used = await run('UPDATE otps SET consumed_at=? WHERE id=? AND consumed_at IS NULL AND attempts<? AND expires_at>=?', [now(), row.id, MAX_ATTEMPTS, now()]);
+    if (Number(used.changes) !== 1) return { error: 'no_otp' };
+  }
   return { ok: true };
 }
 

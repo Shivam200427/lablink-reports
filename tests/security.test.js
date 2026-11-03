@@ -117,6 +117,25 @@ describe('security review', () => {
     expect((await a.post('/api/auth/staff/login').send({ username: 'sec', password: 'pw123' })).status).toBe(200);
   });
 
+  it('does not let Alice flag Bob summary and attributes own summary to its actual patient', async () => {
+    db.prepare('DELETE FROM otps WHERE mobile=?').run('9700000001');
+    const a = agent(); await login(a, '9700000001');
+    const own=db.prepare('SELECT s.id FROM summaries s JOIN results r ON r.id=s.result_id WHERE r.order_id=?').get(orderId('ORD-S1')).id;
+    const other=db.prepare('SELECT s.id FROM summaries s JOIN results r ON r.id=s.result_id WHERE r.order_id=?').get(orderId('ORD-S2')).id;
+    expect((await a.post(`/api/patient/summaries/${other}/flag`).send({reason:'foreign'})).status).toBe(404);
+    expect((await a.post(`/api/patient/summaries/${own}/flag`).send({reason:'own'})).status).toBe(200);
+  });
+
+  it('does not expose a processing order PDF or results before pathologist release', async () => {
+    const pid=db.prepare('SELECT id FROM patients WHERE mobile=?').get('9700000001').id;
+    const oid=Number(db.prepare("INSERT INTO orders(order_code,patient_id,status) VALUES('ORD-DRAFT',?,'processing')").run(pid).lastInsertRowid);
+    db.prepare("INSERT INTO results(order_id,parameter,value,flag) VALUES(?,'Draft','9','unknown')").run(oid);
+    db.prepare('DELETE FROM otps WHERE mobile=?').run('9700000001');
+    const a=agent(); await login(a,'9700000001');
+    expect((await a.get(`/api/patient/orders/${oid}/pdf`)).status).toBe(404);
+    const r=await a.get(`/api/patient/orders/${oid}`); expect(r.status).toBe(200); expect(r.body.results).toEqual([]);
+  });
+
   it('weekly sample endpoint returns at most 50 rows and records reviews', async () => {
     const a = agent();
     await a.post('/api/auth/staff/login').send({ username: 'sec', password: 'pw123' });

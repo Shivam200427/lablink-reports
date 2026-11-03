@@ -126,7 +126,7 @@ app.post('/api/auth/patient/register', async (req, res) => {
   if (!['en', 'te', 'hi'].includes(language)) return res.status(400).json({ error: 'bad_lang' });
   const known = (await get('SELECT COUNT(*) c FROM patients WHERE mobile=?', [mobile])).c > 0;
   if (known) return res.status(409).json({ error: 'already_registered' });
-  const age = req.body.age == null || req.body.age === '' ? null : parseInt(req.body.age, 10);
+  const age = req.body.age == null || req.body.age === '' ? null : (typeof req.body.age === 'number' || (typeof req.body.age === 'string' && /^\d+$/.test(req.body.age))) ? Number(req.body.age) : NaN;
   if (age != null && (!Number.isInteger(age) || age < 0 || age > 120)) return res.status(400).json({ error: 'invalid_age' });
   let sex = String(req.body.sex || '').trim().toUpperCase();
   if (!['M', 'F', 'O'].includes(sex)) sex = null;
@@ -206,10 +206,10 @@ app.get('/api/patient/orders', requireRole('patient'), async (req, res) => {
 app.get('/api/patient/orders/:id', requireRole('patient'), async (req, res) => {
   const order = await orderForPatient(req, req.params.id);
   if (!order) return res.status(404).json({ error: 'not_found' });
-  const results = (await all(
+  const results = ['ready', 'ready_critical'].includes(order.status) ? (await all(
     `SELECT r.*, s.id summary_id, s.lang_en, s.lang_te, s.lang_hi, s.confidence, s.engine,
        (SELECT COUNT(*) FROM summary_flags f WHERE f.summary_id=s.id AND f.status='open') flagged
-     FROM results r LEFT JOIN summaries s ON s.result_id=r.id WHERE r.order_id=?`, [order.id]));
+     FROM results r LEFT JOIN summaries s ON s.result_id=r.id WHERE r.order_id=?`, [order.id])) : [];
   await logAccess('patient', req.actor.id, 'report_view', 'order', order.id, order.order_code);
   res.json({ order, results, hasPdf: ['ready', 'ready_critical'].includes(order.status) });
 });
@@ -226,7 +226,10 @@ app.get('/api/patient/orders/:id/pdf', requireRole('patient'), async (req, res) 
 app.post('/api/patient/summaries/:id/flag', requireRole('patient'), async (req, res) => {
   const s = (await get('SELECT * FROM summaries WHERE id=?', [req.params.id]));
   if (!s) return res.status(404).json({ error: 'not_found' });
-  (await run('INSERT INTO summary_flags (summary_id, patient_id, reason) VALUES (?,?,?)', [s.id, req.actor.id, String(req.body.reason || '').slice(0, 500)]));
+  const result = await get('SELECT order_id FROM results WHERE id=?', [s.result_id]);
+  const order = result ? await orderForPatient(req, result.order_id) : null;
+  if (!order || !['ready', 'ready_critical'].includes(order.status)) return res.status(404).json({ error: 'not_found' });
+  (await run('INSERT INTO summary_flags (summary_id, patient_id, reason) VALUES (?,?,?)', [s.id, order.patient_id, String(req.body.reason || '').slice(0, 500)]));
   await logAccess('patient', req.actor.id, 'summary_flagged', 'summary', s.id, null);
   res.json({ ok: true });
 });
@@ -509,7 +512,7 @@ app.post('/api/staff/orders', requireStaffRole('frontdesk'), async (req, res) =>
   const fullName = String(b.patientName || '').trim();
   const mobile = String(b.mobile || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
   const doctorName = String(b.doctorName || '').trim();
-  const age = b.age == null || b.age === '' ? null : parseInt(b.age, 10);
+  const age = b.age == null || b.age === '' ? null : (typeof b.age === 'number' || (typeof b.age === 'string' && /^\d+$/.test(b.age))) ? Number(b.age) : NaN;
   let sex = String(b.sex || '').trim().toUpperCase();
   if (!['M', 'F', 'O'].includes(sex)) sex = null;
   const results = Array.isArray(b.results) ? b.results : [];
@@ -678,7 +681,7 @@ app.get('/api/doctor/reports', requireRole('doctor'), async (req, res) => {
 app.get('/api/doctor/orders/:id', requireRole('doctor'), async (req, res) => {
   const order = (await get(
     `SELECT o.*, p.full_name patient_name, p.age, p.sex FROM orders o JOIN patients p ON p.id=o.patient_id
-     WHERE o.id=? AND o.doctor_id=?`, [req.params.id, req.actor.id]));
+     WHERE o.id=? AND o.doctor_id=? AND o.status IN ('ready','ready_critical') AND o.signed_at > datetime('now','-90 days')`, [req.params.id, req.actor.id]));
   if (!order) return res.status(404).json({ error: 'not_found' });
   const results = (await all('SELECT * FROM results WHERE order_id=?', [order.id]));
   await logAccess('doctor', req.actor.id, 'report_view', 'order', order.id, order.order_code);
@@ -689,6 +692,7 @@ app.get('/api/doctor/orders/:id', requireRole('doctor'), async (req, res) => {
 // PDFs are cached files on an ephemeral filesystem; the database is the
 // source of truth, so regenerate a missing PDF on demand.
 async function ensurePdf(order) {
+  if (!['ready', 'ready_critical'].includes(order.status) || !order.signed_at) return null;
   const file = path.join(DATA_DIR, 'pdfs', `${order.order_code}.pdf`);
   if (!fs.existsSync(file)) {
     const patient = await get('SELECT * FROM patients WHERE id=?', [order.patient_id]);
@@ -703,6 +707,10 @@ async function ensurePdf(order) {
 // ---------- errors ----------
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
+  if (err.status === 400 && err.message === 'invalid_csv') return res.status(400).json({ error: 'invalid_csv' });
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'invalid_json' });
+  if (err.type === 'entity.too.large' || err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'payload_too_large' });
+  if (err.code === 'LIMIT_UNEXPECTED_FILE') return res.status(400).json({ error: 'unexpected_file' });
   console.error('api error:', err.message);
   res.status(500).json({ error: 'internal' });
 });

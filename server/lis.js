@@ -19,7 +19,9 @@ async function importCSVTransaction(text, actor) {
   if (isPostgres) await get('SELECT pg_advisory_xact_lock(7120401)');
   const readyOrders = new Set();
   const heldOrders = new Set();
-  const rows = parse(text, { columns: true, skip_empty_lines: true, trim: true });
+  let rows;
+  try { rows = parse(text, { columns: true, skip_empty_lines: true, trim: true, max_record_size: 65536 }); }
+  catch { const e = new Error('invalid_csv'); e.status = 400; throw e; }
   const report = { rows: rows.length, ordersTouched: new Set(), newOrders: 0, newPatients: 0, signedOff: 0, errors: [] };
   for (const [i, row] of rows.entries()) {
     try {
@@ -37,11 +39,12 @@ async function importCSVTransaction(text, actor) {
       let sex = (r.sex || r.gender || '').trim().toUpperCase();
       if (!['M', 'F', 'O'].includes(sex)) sex = null;
       const unit = r.unit || null;
-      if (!orderCode || !patientName || !parameter || value == null) {
+      if (!orderCode || !patientName || !parameter || value == null || String(value).trim() === '') {
         if (orderCode) heldOrders.add(orderCode);
         report.errors.push(`row ${i + 2}: missing order/patient/parameter/result`);
         continue;
       }
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(orderCode)) { heldOrders.add(orderCode); report.errors.push(`row ${i + 2}: invalid order code`); continue; }
       report.ordersTouched.add(orderCode);
 
       // Identity linkage: an import NEVER grants access and never merges
@@ -98,7 +101,8 @@ async function importCSVTransaction(text, actor) {
         order = (await get('SELECT * FROM orders WHERE id=?', [oid]));
         report.newOrders++;
       }
-      if (/ready|signed|critical/i.test(status)) readyOrders.add(orderCode);
+      if (order.patient_id !== patient.id) { heldOrders.add(orderCode); report.errors.push(`row ${i + 2}: order patient mismatch - row held`); continue; }
+      if (/^(ready|signed|critical|ready_critical)$/i.test(status.trim())) readyOrders.add(orderCode);
       // Already signed orders are immutable. Exact repeats are safe; corrections
       // need an explicit amended-report workflow, not a silent second release.
       const existing = await get("SELECT * FROM results WHERE order_id=? AND parameter=? AND value=? AND COALESCE(unit,'')=? AND COALESCE(reference_range,'')=?", [order.id, parameter, String(value), unit || '', range || '']);
