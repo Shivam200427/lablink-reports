@@ -64,8 +64,9 @@ function requireStaffRole(...roles) {
     next();
   };
 }
+const sessionCookieOptions = { httpOnly: true, sameSite: 'lax', secure: new URL(BASE_URL).protocol === 'https:' };
 const setSessionCookie = (res, token) =>
-  res.cookie('ll_session', token, { httpOnly: true, sameSite: 'lax', maxAge: 12 * 3600 * 1000 });
+  res.cookie('ll_session', token, { ...sessionCookieOptions, maxAge: 12 * 3600 * 1000 });
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
@@ -360,7 +361,7 @@ app.post('/api/auth/staff/logout', async (req, res) => {
     (await run('DELETE FROM sessions WHERE token_hash=?', [sha256(req.cookies?.ll_session || '')]));
     await logAccess(a.type, a.id, 'logout', a.type, a.id, null);
   }
-  res.clearCookie('ll_session');
+  res.clearCookie('ll_session', sessionCookieOptions);
   res.json({ ok: true });
 });
 
