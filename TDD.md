@@ -61,12 +61,12 @@ PDF reports: pdfkit, generated at sign-off and on demand (cached file, regenerat
 
 - **Backend:** Express, one async data layer (`server/db.js`) over better-sqlite3 locally and `pg` (Postgres) when `DATABASE_URL` is set, pdfkit.
 - **Frontend:** React 19 + Vite + Tailwind, mobile-first, large tap targets and large text,
-  language switcher persisted per patient. Every patient-facing surface carries the switcher and
+  globe language picker with English/Telugu/Hindi persisted on the device. Every patient-facing surface carries the switcher and
   all of its error states (OTP failures, rate limits, network loss, invalid links) render in the
   selected language; a lost connection shows a retryable message instead of hanging or silently
   bouncing to sign-in. Staff and doctor consoles are English-only and carry no switcher.
 - **Messaging:** `server/outbox.js` writes every WhatsApp/SMS/OTP to an `outbox` table and a
-  ticker simulates send/delivered status. Swapping in MSG91/Twilio is a one-file change.
+  ticker simulates send/delivered status. A real provider needs a durable dispatch worker, provider configuration and delivery-receipt handling.
 - **Tests:** 61 vitest integration tests (`tests/`: api, security, resilience, sms, liswatch) boot the
   real app on a throwaway database.
 
@@ -80,7 +80,7 @@ PDF reports: pdfkit, generated at sign-off and on demand (cached file, regenerat
    **lab-created** records by mobile + name (or by name only when exactly one lab
    record matches). An import creates **no access grants** - a lab-created patient
    cannot log in until the front desk attests their contact number (below).
-2. **Sign-off:** the pathologist reviews values and signs. `signOffOrder()` then, in one
+2. **Sign-off:** the pathologist reviews values and signs. A Ready/signed CSV export releases automatically after every row for that order has loaded. `signOffOrder()` then, in one
    transaction: flips order status, generates the report PDF, creates a **72-hour secure
    link**, queues the WhatsApp/SMS message, generates **plain-language summaries** for every
    out-of-range result in the patient's language, and creates a **callback task** for every
@@ -101,8 +101,7 @@ PDF reports: pdfkit, generated at sign-off and on demand (cached file, regenerat
    people". A **name-only** row attaches to lab-created patients only, and only when
    exactly one matches - an ambiguous name is held with a staff-facing error asking
    for a Mobile column rather than guessing. A self-asserted name or a held phone
-   alone can never pull in someone else's report. DPDP consent is captured at
-   registration on both paths.
+   alone can never pull in someone else's report. Consent is recorded on first verified access before reports, not at the instant an empty registration record is created.
 4. **Delivery:** patient taps the link -> sees which report it is -> requests OTP -> OTP goes
    to the registered mobile (mocked) -> report opens.
 5. **After:** patient reads values + summaries, downloads the PDF, and can flag any summary
@@ -118,7 +117,7 @@ PDF reports: pdfkit, generated at sign-off and on demand (cached file, regenerat
 | Sessions | Random bearer tokens, hashed at rest, 12-hour expiry, scoped (a link-verified session can only read that one order). |
 | Family numbers | One mobile can serve many patients, but access comes from explicit per-patient grants, never from the number itself. A grant exists only after OTP-verified self-registration, a front-desk contact attestation (walk-in or verify-contact), or a delegated family grant. After OTP the user picks "whose reports" from only the patients they hold a grant for. Seeded demo families use system-labelled fixture grants, never attributed to a staff member. Revoking a grant immediately closes portal access and any already-open report links (403 access_revoked). |
 | Self-registration | OTP proves phone possession, not identity. A self-registered record is empty and marked `created_via=self`. Lab-asserted rows (LIS import or front-desk entry) never attach automatically: a same-mobile-and-name LIS import raises a **pending merge** that staff must explicitly attest before anything converges; name-only imports stay separate patients. A mobile already known to the lab cannot self-register (409). Ambiguous name-only rows (two lab patients with the same name) are held with an error, never guessed. |
-| Consent (DPDP) | Captured at **registration** on both enrolment paths: self-registration shows the consent notice after OTP verify, and lab-enrolled patients (created by LIS import) see it at first login. Acceptance (data used only to deliver lab reports, contact the lab to delete) is recorded with timestamp before any data is shown. |
+| Consent (DPDP) | Captured on **first verified access** on both enrolment paths: self-registration shows the consent notice after OTP verify, and lab-enrolled patients (created by LIS import) see it at first login. Acceptance (data used only to deliver lab reports, contact the lab to delete) is recorded with timestamp before any data is shown. |
 | Access log | Every report view, OTP event, resend, flag and sign-off writes an `access_log` row (actor, action, subject, time) - the lab can show who saw what, when. |
 | Critical values | Never summarised, and the message for a critical report tells the patient the lab will call. A callback task is created so no critical result is silently delivered. |
 | Secrets in repo | None. Synthetic demo data only; staff passwords are scrypt-hashed; salt is an env var. |
@@ -248,7 +247,7 @@ lab-asserted and self-registered records) - `sms_budget` + `sms_real_claims`
 
 Messages render UTC event timestamps in India Standard Time with an explicit IST label; the stored event time and audit ordering are not rewritten. Three date tests cover UTC, midnight rollover and explicit offsets.
 
-Signed CSV exports use a single database transaction for row ingestion and release. All rows are loaded before link/message/summary/callback creation. Exact repeats are ignored, amended signed results are held, and a failed release rolls back for retry. PostgreSQL uses a transaction-level import advisory lock and an order row lock. The mocked outbox is transactional; a future real provider needs a durable dispatch worker.
+Signed CSV exports use a single database transaction for row ingestion and release. All rows are loaded before link/message/summary/callback creation. Exact repeats are ignored, amended signed results are held, and a failed release rolls back for retry. PostgreSQL uses a transaction-level import advisory lock and an order row lock. The mocked outbox is transactional; a future real provider needs a durable dispatch worker. PDF cache files are outside the database transaction and can leave replaceable orphan files on a failed attempt.
 
 
 `npm test` -> **61 vitest integration tests** against the real app on a temp database:
@@ -273,6 +272,7 @@ Signed CSV exports use a single database transaction for row ingestion and relea
   patient portal delivery, front-desk attachment to a self-registered account, role +
   input validation), and lab-verified delegation (grant/revoke, one patient only).
 - `tests/import-ready.test.js` (5): mixed-row Ready export release, repeat idempotence, changed signed results held, failed release rollback/retry, and incomplete orders held.
+- `tests/dates.test.js` (3): Messages UTC-to-IST display, midnight date rollover and explicit offsets.
 - `tests/pdf-signoff.test.js` (1): first PDF gets persisted signer/time.
 - `tests/sms.test.js` (8) - the optional real-sender path: mock by default, the
   row-locked budget claim cannot double-spend, provider rejections are labelled

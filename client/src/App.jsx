@@ -53,7 +53,7 @@ export function BrandHeader({ right }) {
   return (
     <header className="mb-6 flex items-center justify-between">
       <Link to="/" className="flex items-center gap-2">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-700 text-lg font-bold text-white">L</span>
+        <span aria-hidden="true" className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-700 text-white"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
         <span className="text-xl font-bold tracking-tight text-slate-900">LabLink</span>
         <span className="hidden text-sm text-slate-400 sm:inline">Company A Diagnostics</span>
       </Link>
