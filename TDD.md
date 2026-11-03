@@ -146,9 +146,8 @@ truncated Telugu output at lower caps). The AI code path was proven end-to-end f
 app's own code against the real Gemini API: real validated AI sentences,
 including Telugu, stored as `engine=ai`. A 503 "high demand" from Gemini was
 observed once and the app fell back to the locked template by design - the
-safety floor working as intended. Gemini's free tier trains on submitted
-content, so only synthetic demo data is ever sent. No provider was paid for
-this submission.
+safety floor working as intended. Only synthetic demo data is ever sent.
+No provider was paid for this submission.
 The earlier keyless-endpoint configuration (pollinations.ai) was replaced:
 its provider calls never succeeded at verification time. Every summary row
 stores `engine=ai`, `ai+template` or `template`, visible on the staff
@@ -349,8 +348,7 @@ endpoint) before the build is called ready.
   route. OTPs are read from the staff outbox in the demo.
 - **AI provider:** the demo is configured for Google's Gemini free tier and
   the full AI path was proven end-to-end against the real API (validated
-  `engine=ai` sentences, including Telugu). Gemini's free tier trains on
-  submitted content, so only synthetic demo data is sent; a transient 503
+  `engine=ai` sentences, including Telugu). Only synthetic demo data is sent; a transient 503
   was observed and the locked template took over, by design. No provider
   was paid for this submission.
 - **India hosting, unmet:** the brief asks for hosting in India. This demo runs
