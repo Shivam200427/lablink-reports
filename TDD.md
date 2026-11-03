@@ -1,7 +1,7 @@
 # LabLink - Technical Design Document
 
 **GitHub:** https://github.com/Shivam200427/lablink-reports (public; full source + commit history)
-**Live app:** https://lablink-reports.onrender.com (free Render demo, Singapore region; sleeps when idle so the first load can take ~50s. Demo data lives on Render's free Postgres (1 GB, expires 2026-12-02, no card) and survives restarts until then; a one-command reseed resets it. No paid services used.)
+**Live app:** https://lablink-reports.getvoroa.com (Voroa app and PostgreSQL in Mumbai; synthetic demo). Parallel Render fallback: https://lablink-reports.onrender.com (Singapore). Both stay live. See deployment.md for current configuration and free-host limitations; no production compliance or uptime guarantee.
 
 **Product:** secure lab-report delivery for Company A, Vijayawada ("LabLink" is a demo brand name chosen for this submission)
 **Author:** Shivam Jain, built with AI assistance (the brief encourages AI) - **Date:** 3 November 2026 - **Stack:** Node.js 22 / Express / SQLite locally, Postgres on the demo host - React 19 / Vite / Tailwind
@@ -67,7 +67,7 @@ PDF reports: pdfkit, generated at sign-off and on demand (cached file, regenerat
   bouncing to sign-in. Staff and doctor consoles are English-only and carry no switcher.
 - **Messaging:** `server/outbox.js` writes every WhatsApp/SMS/OTP to an `outbox` table and a
   ticker simulates send/delivered status. Swapping in MSG91/Twilio is a one-file change.
-- **Tests:** 52 vitest integration tests (`tests/`: api, security, resilience, sms, liswatch) boot the
+- **Tests:** 61 vitest integration tests (`tests/`: api, security, resilience, sms, liswatch) boot the
   real app on a throwaway database.
 
 ## 5. Core flow
@@ -241,12 +241,17 @@ lab-asserted and self-registered records) - `sms_budget` + `sms_real_claims`
 ## 11. Reliability notes
 
 - Sign-off can never be stalled by a sick AI provider: every provider call has a hard 10s timeout (AI_TIMEOUT_MS), generation stops attempting AI after a 25s per-order budget (AI_ORDER_BUDGET_MS), and the locked template is always the floor. Every AI fallback (timeout/provider error) and every rejected AI output is recorded in the access log (`ai_summary_fallback` / `ai_summary_rejected`, test name + provider error only - never patient identity or values), so the template-vs-AI ratio is diagnosable from the ops console. Patients see an honest per-summary chip: AI-written / AI + standard wording / Standard wording.
-- Deploy startup is deterministic: the seed never touches the network and only seeds an EMPTY database, so restarts and redeploys never wipe data. On the demo host the database is Render's free Postgres (survives restarts and redeploys; expires 2026-12-02 - see Limitations); locally it is SQLite on the instance filesystem.
+- Deploy startup is deterministic: the seed never touches the network and only seeds an EMPTY database, so restarts and redeploys never wipe data. The Voroa demo uses managed Postgres in Mumbai; the parallel Render demo uses its own Postgres copy. Locally it is SQLite on the instance filesystem.
 - Provider errors are logged (test name + error only, no patient data) so template fallbacks are diagnosable in host logs.
 
 ## 12. Testing
 
-`npm test` -> **52 vitest integration tests** against the real app on a temp database:
+Messages render UTC event timestamps in India Standard Time with an explicit IST label; the stored event time and audit ordering are not rewritten. Three date tests cover UTC, midnight rollover and explicit offsets.
+
+Signed CSV exports use a single database transaction for row ingestion and release. All rows are loaded before link/message/summary/callback creation. Exact repeats are ignored, amended signed results are held, and a failed release rolls back for retry. PostgreSQL uses a transaction-level import advisory lock and an order row lock. The mocked outbox is transactional; a future real provider needs a durable dispatch worker.
+
+
+`npm test` -> **61 vitest integration tests** against the real app on a temp database:
 
 - `tests/api.test.js` (32): flag rules (normal/high/low/critical), summary-engine
   safety (critical suppressed, unknown suppressed, disclaimer present, three
@@ -267,6 +272,8 @@ lab-asserted and self-registered records) - `sms_budget` + `sms_real_claims`
   completion, flag review), CSV import edge cases, manual front-desk order entry (create -> sign-off ->
   patient portal delivery, front-desk attachment to a self-registered account, role +
   input validation), and lab-verified delegation (grant/revoke, one patient only).
+- `tests/import-ready.test.js` (5): mixed-row Ready export release, repeat idempotence, changed signed results held, failed release rollback/retry, and incomplete orders held.
+- `tests/pdf-signoff.test.js` (1): first PDF gets persisted signer/time.
 - `tests/sms.test.js` (8) - the optional real-sender path: mock by default, the
   row-locked budget claim cannot double-spend, provider rejections are labelled
   distinctly from mock sends, and the recipient gate holds.
@@ -331,11 +338,7 @@ endpoint) before the build is called ready.
 **Limitations:**
 
 - **Database:** SQLite locally, Postgres on the demo host - one async data
-  layer (`server/db.js`) serves both. The demo uses Render's free Postgres
-  (1 GB, Singapore, no card) which **expires 2026-12-02** (30 days after
-  creation, 14-day grace period before deletion). Before that date the demo
-  must be re-pointed at a fresh database or back to SQLite, or the service
-  starts failing.
+  layer (`server/db.js`) serves both. The current Voroa demo uses managed Postgres in Mumbai. The parallel Render database remains in Singapore and expires December 2, 2026. Both free demos have ephemeral app filesystems and idle sleep; PDFs regenerate from database records. Voroa shares 750 free running hours across app and database.
 - **Messaging, mocked by default:** no real SMS/WhatsApp leaves the box unless explicitly
   enabled. The outbox proves the full pipeline. An optional demo-grade Fast2SMS Quick SMS
   sender (`server/sms.js`, env `FAST2SMS_API_KEY` / `FAST2SMS_ALLOWED_RECIPIENT` /
@@ -351,9 +354,7 @@ endpoint) before the build is called ready.
   `engine=ai` sentences, including Telugu). Only synthetic demo data is sent; a transient 503
   was observed and the locked template took over, by design. No provider
   was paid for this submission.
-- **India hosting, unmet:** the brief asks for hosting in India. This demo runs
-  in the host's Singapore region, so the constraint is openly unmet on this demo
-  and no residency or legal-compliance claim is made.
+- **Hosting:** the current Voroa demo app and PostgreSQL run in Mumbai. The parallel Render fallback remains in Singapore. The client's production hosting-in-India constraint is distinct from the take-home demo scope. Neither deployment is a DPDP/legal-compliance certification; AI processing and operational controls need their own review before real health data.
 - **PDFs are functional, not branded** like the lab's printed letterhead.
 - **LIS folder watch is host-dependent:** the app watches a folder
   (`LIS_WATCH_DIR`, default `<data dir>/lis-incoming`) and imports dropped CSV

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { BrandHeader } from '../App.jsx';
 import StaffNav from './StaffNav.jsx';
+import { formatIST } from '../dates.js';
 
 // Whole-lab message log. Entries marked "mock" are simulated - no real
 // message ever left the box; "delivered" on a mock entry is the simulation
@@ -32,7 +33,8 @@ export default function StaffOutbox() {
     <div>
       <BrandHeader />
       <StaffNav />
-      <h2 className="mb-3 text-xl font-bold text-slate-900">Messages</h2>
+      <h2 className="mb-1 text-xl font-bold text-slate-900">Messages</h2>
+      <p className="mb-3 text-sm text-slate-500">Message times are shown in India Standard Time (IST).</p>
       <form className="mb-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); load(mobile); }}>
         <input className="input" inputMode="numeric" maxLength={10} placeholder="Filter by mobile (10 digits)"
           value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))} />
@@ -47,8 +49,8 @@ export default function StaffOutbox() {
       <div className="space-y-2">
         {shown.map((m) => (
           <div key={m.id} className="card py-3">
-            <div className="flex items-center justify-between">
-              <div className="min-w-0 text-sm text-slate-500">{m.to_mobile} · {m.channel} · {(m.created_at || '').slice(0, 16)}</div>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0 text-sm text-slate-500">{m.to_mobile} · {m.channel}<br /><time dateTime={(m.created_at || '').replace(' ', 'T') + 'Z'}>{formatIST(m.created_at)}</time></div>
               <span className={`chip ${m.provider ? 'bg-sky-100 text-sky-800' : m.status === 'delivered' ? 'bg-brand-100 text-brand-800' : m.status === 'failed' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>{m.provider ? `provider · ${m.status}` : `mock · ${m.status}`}</span>
             </div>
             <div className="mt-1 break-words text-base text-slate-800">{m.body}</div>
