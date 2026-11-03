@@ -45,16 +45,16 @@ export default function PatientRegister() {
         {step === 'form' && (
           <form onSubmit={register}>
             <p className="mb-5 text-base leading-relaxed text-slate-500">{t(lang, 'registerIntro')}</p>
-            <label className="label">{t(lang, 'fullName')}</label>
-            <input className="input mb-4" maxLength={80} value={fullName} onChange={(e) => setFullName(e.target.value)} />
-            <label className="label">{t(lang, 'regMobile')}</label>
-            <input className="input mb-4" inputMode="numeric" maxLength={10} placeholder="90000 00001"
+            <label className="label" htmlFor="patientregister-1">{t(lang, 'fullName')}</label>
+            <input id="patientregister-1" className="input mb-4" maxLength={80} value={fullName} onChange={(e) => setFullName(e.target.value)} />
+            <label className="label" htmlFor="patientregister-2">{t(lang, 'regMobile')}</label>
+            <input id="patientregister-2" className="input mb-4" inputMode="numeric" maxLength={10} placeholder="90000 00001"
               value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))} />
-            <label className="label">{t(lang, 'yourAge')}</label>
-            <input className="input mb-4" inputMode="numeric" maxLength={3}
+            <label className="label" htmlFor="patientregister-3">{t(lang, 'yourAge')}</label>
+            <input id="patientregister-3" className="input mb-4" inputMode="numeric" maxLength={3}
               value={age} onChange={(e) => setAge(e.target.value.replace(/\D/g, ''))} />
-            <label className="label">{t(lang, 'yourSex')}</label>
-            <select className="input mb-4" value={sex} onChange={(e) => setSex(e.target.value)}>
+            <label className="label" htmlFor="patientregister-4">{t(lang, 'yourSex')}</label>
+            <select id="patientregister-4" className="input mb-4" value={sex} onChange={(e) => setSex(e.target.value)}>
               <option value="">-</option><option value="F">F</option><option value="M">M</option><option value="O">O</option>
             </select>
             {error && <p className="mb-3 text-base text-red-600">{error}</p>}
@@ -63,8 +63,8 @@ export default function PatientRegister() {
         )}
         {step === 'otp' && (
           <form onSubmit={(e) => verify(e, false)}>
-            <label className="label">{t(lang, 'enterOtp')}</label>
-            <input className="input mb-4 tracking-[0.5em]" inputMode="numeric" maxLength={6} placeholder="------"
+            <label className="label" htmlFor="patientregister-5">{t(lang, 'enterOtp')}</label>
+            <input id="patientregister-5" className="input mb-4 tracking-[0.5em]" inputMode="numeric" maxLength={6} placeholder="------"
               value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
             {error && <p className="mb-3 text-base text-red-600">{error}</p>}
             <button className="btn w-full" disabled={busy || code.length !== 6}>{t(lang, 'verify')}</button>

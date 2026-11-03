@@ -4,7 +4,7 @@ import multer from 'multer';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { all, get, run, insert, initDB, logAccess } from './db.js';
+import { all, get, run, insert, initDB, logAccess, transaction } from './db.js';
 import { requestOTP, verifyOTP, createSession, getSession } from './otp.js';
 import { hashPassword, verifyPassword, now, randomToken, sha256, addHours } from './crypto.js';
 import { importCSV, signOffOrder } from './lis.js';
@@ -507,6 +507,7 @@ app.post('/api/staff/import', requireStaffRole('pathologist'), upload.single('fi
 // Without the attestation the entry is refused (400). The order lands in
 // processing; the pathologist reviews and signs as usual.
 app.post('/api/staff/orders', requireStaffRole('frontdesk'), async (req, res) => {
+  return transaction(async () => {
   const b = req.body || {};
   if (b.contactVerified !== true) return res.status(400).json({ error: 'contact_attestation_required' });
   const fullName = String(b.patientName || '').trim();
@@ -547,6 +548,7 @@ app.post('/api/staff/orders', requireStaffRole('frontdesk'), async (req, res) =>
     if (!d) { const did = await insert('INSERT INTO doctors (full_name) VALUES (?)', [doctorName]); d = (await get('SELECT * FROM doctors WHERE id=?', [did])); }
     doctorId = d.id;
   }
+  if (process.env.DATABASE_URL) await get('SELECT pg_advisory_xact_lock(7120402)');
   const codes = (await all('SELECT order_code FROM orders')).map((r) => parseInt(String(r.order_code).replace(/^ORD-/, ''), 10)).filter((n) => !isNaN(n));
   const orderCode = `ORD-${Math.max(71200, ...codes) + 1}`;
   const oid = await insert('INSERT INTO orders (order_code, patient_id, doctor_id, status) VALUES (?,?,?,?)', [orderCode, patient.id, doctorId, 'processing']);
@@ -559,6 +561,7 @@ app.post('/api/staff/orders', requireStaffRole('frontdesk'), async (req, res) =>
   }
   await logAccess('staff', req.actor.id, 'order_created', 'order', oid, `${orderCode} manual front-desk entry for ${fullName}`);
   res.json({ ok: true, orderId: oid, orderCode, patientId: patient.id });
+  });
 });
 
 app.get('/api/staff/orders', requireRole('staff'), async (req, res) => {

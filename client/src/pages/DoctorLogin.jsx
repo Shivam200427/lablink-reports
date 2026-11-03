@@ -31,15 +31,15 @@ export default function DoctorLogin() {
         <h1 className="mb-5 text-2xl font-bold text-slate-900">Referring doctor sign in</h1>
         {step === 'mobile' ? (
           <form onSubmit={send}>
-            <label className="label">Registered mobile number</label>
-            <input className="input mb-4" inputMode="numeric" maxLength={10} value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))} />
+            <label className="label" htmlFor="doctorlogin-1">Registered mobile number</label>
+            <input id="doctorlogin-1" className="input mb-4" inputMode="numeric" maxLength={10} value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))} />
             {err && <p className="mb-3 text-base text-red-600">{err}</p>}
             <button className="btn w-full" disabled={busy || mobile.length !== 10}>Send OTP</button>
           </form>
         ) : (
           <form onSubmit={verify}>
-            <label className="label">6-digit OTP</label>
-            <input className="input mb-4 tracking-[0.5em]" inputMode="numeric" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
+            <label className="label" htmlFor="doctorlogin-2">6-digit OTP</label>
+            <input id="doctorlogin-2" className="input mb-4 tracking-[0.5em]" inputMode="numeric" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
             {err && <p className="mb-3 text-base text-red-600">{err}</p>}
             <button className="btn w-full" disabled={busy || code.length !== 6}>Verify</button>
           </form>

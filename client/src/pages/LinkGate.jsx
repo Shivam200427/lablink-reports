@@ -62,8 +62,8 @@ export default function LinkGate() {
       )}
       {!info.error && step === 'otp' && (
         <form className="card" onSubmit={verify}>
-          <label className="label">{t(lang, 'enterOtp')}</label>
-          <input className="input mb-4 tracking-[0.5em]" inputMode="numeric" maxLength={6}
+          <label className="label" htmlFor="linkgate-1">{t(lang, 'enterOtp')}</label>
+          <input id="linkgate-1" className="input mb-4 tracking-[0.5em]" inputMode="numeric" maxLength={6}
             value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
           {error && <p className="mb-3 text-base text-red-600">{error}</p>}
           <button className="btn w-full" disabled={busy || code.length !== 6}>{t(lang, 'verify')}</button>

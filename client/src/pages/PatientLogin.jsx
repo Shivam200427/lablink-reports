@@ -40,8 +40,8 @@ export default function PatientLogin() {
         <p className="mb-6 text-lg text-slate-500">{t(lang, 'appTag')}</p>
         {step === 'mobile' && (
           <form onSubmit={sendOtp}>
-            <label className="label">{t(lang, 'enterMobile')}</label>
-            <input className="input mb-4" inputMode="numeric" maxLength={10} placeholder="90000 00001"
+            <label className="label" htmlFor="patientlogin-1">{t(lang, 'enterMobile')}</label>
+            <input id="patientlogin-1" className="input mb-4" inputMode="numeric" maxLength={10} placeholder="90000 00001"
               value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))} />
             {error && <p className="mb-3 text-base text-red-600">{error}</p>}
             <button className="btn w-full" disabled={busy || mobile.length !== 10}>{t(lang, 'sendOtp')}</button>
@@ -51,8 +51,8 @@ export default function PatientLogin() {
         )}
         {step === 'otp' && (
           <form onSubmit={(e) => verify(e, false)}>
-            <label className="label">{t(lang, 'enterOtp')}</label>
-            <input className="input mb-4 tracking-[0.5em]" inputMode="numeric" maxLength={6} placeholder="------"
+            <label className="label" htmlFor="patientlogin-2">{t(lang, 'enterOtp')}</label>
+            <input id="patientlogin-2" className="input mb-4 tracking-[0.5em]" inputMode="numeric" maxLength={6} placeholder="------"
               value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
             {error && <p className="mb-3 text-base text-red-600">{error}</p>}
             <button className="btn w-full" disabled={busy || code.length !== 6}>{t(lang, 'verify')}</button>

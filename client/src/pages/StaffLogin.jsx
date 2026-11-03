@@ -23,10 +23,10 @@ export default function StaffLogin() {
       <BrandHeader />
       <form className="card mt-10" onSubmit={login}>
         <h1 className="mb-5 text-2xl font-bold text-slate-900">Staff sign in</h1>
-        <label className="label">Username</label>
-        <input className="input mb-4" value={u} onChange={(e) => setU(e.target.value)} autoComplete="username" />
-        <label className="label">Password</label>
-        <input className="input mb-5" type="password" value={p} onChange={(e) => setP(e.target.value)} autoComplete="current-password" />
+        <label className="label" htmlFor="stafflogin-1">Username</label>
+        <input id="stafflogin-1" className="input mb-4" value={u} onChange={(e) => setU(e.target.value)} autoComplete="username" />
+        <label className="label" htmlFor="stafflogin-2">Password</label>
+        <input id="stafflogin-2" className="input mb-5" type="password" value={p} onChange={(e) => setP(e.target.value)} autoComplete="current-password" />
         {err && <p className="mb-3 text-base text-red-600">{err}</p>}
         <button className="btn w-full" disabled={busy || !u || !p}>Sign in</button>
       </form>
