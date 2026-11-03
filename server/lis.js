@@ -141,6 +141,7 @@ async function signOffTransaction(orderId, signedBy, actor) {
   if (!order) return { error: 'not_found' };
   if (order.signed_at) return { error: 'already_signed' };
   const results = (await all('SELECT * FROM results WHERE order_id=?', [orderId]));
+  if (!results.length) return { error: 'no_results' };
   const critical = results.filter(r => r.flag === 'critical');
   const status = critical.length ? 'ready_critical' : 'ready';
   (await run('UPDATE orders SET status=?, signed_at=?, signed_by=? WHERE id=?', [status, now(), signedBy, orderId]));

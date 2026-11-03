@@ -20,6 +20,7 @@ export function EngineBadge({ engine, lang }) {
 
 export function ReportBody({ order, results, hasPdf, pdfUrl, lang, onFlag }) {
   const [flaggedIds, setFlaggedIds] = React.useState(new Set());
+  const [flagError, setFlagError] = React.useState(false);
   const summaries = results.filter((r) => r.summary_id);
   const hasCritical = results.some((r) => r.flag === 'critical');
   const summaryText = (r) => r[`lang_${lang}`] || r.lang_en;
@@ -57,6 +58,7 @@ export function ReportBody({ order, results, hasPdf, pdfUrl, lang, onFlag }) {
           <h3 className="mb-1 text-lg font-bold text-slate-900">{t(lang, 'summaryTitle')}</h3>
           <p className="mb-3 text-base leading-snug text-slate-500">{t(lang, 'summaryDisclaimer')}</p>
           <div className="space-y-4">
+            {flagError && <p role="alert" className="text-red-600">{t(lang, 'genericError')}</p>}
             {summaries.map((r) => (
               <div key={r.id} className="rounded-xl bg-brand-50 p-4">
                 <div className="mb-1 flex items-center justify-between gap-2">
@@ -68,7 +70,7 @@ export function ReportBody({ order, results, hasPdf, pdfUrl, lang, onFlag }) {
                   <button
                     className="mt-2 text-sm font-medium text-slate-400 underline disabled:no-underline"
                     disabled={flaggedIds.has(r.summary_id)}
-                    onClick={async () => { await onFlag(r.summary_id); setFlaggedIds(new Set(flaggedIds).add(r.summary_id)); }}>
+                    onClick={async () => { const response = await onFlag(r.summary_id); if (!response?.ok) { setFlagError(true); return; } setFlagError(false); setFlaggedIds(prev => new Set(prev).add(r.summary_id)); }}>
                     {flaggedIds.has(r.summary_id) ? t(lang, 'flagged') : t(lang, 'flagWrong')}
                   </button>
                 )}

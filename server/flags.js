@@ -4,8 +4,8 @@
 export function parseRange(text) {
   if (!text) return null;
   const t = String(text).trim().toLowerCase().replace(/\s+/g, ' ');
-  let m = t.match(/^(-?\d+(?:\.\d+)?)\s*[-–to]+\s*(-?\d+(?:\.\d+)?)$/);
-  if (m) return { low: parseFloat(m[1]), high: parseFloat(m[2]) };
+  let m = t.match(/^(-?\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(-?\d+(?:\.\d+)?)$/);
+  if (m) return Number(m[1]) <= Number(m[2]) ? { low: Number(m[1]), high: Number(m[2]) } : null;
   m = t.match(/^(?:<|<=|up to|less than|below|upto)\s*(-?\d+(?:\.\d+)?)$/);
   if (m) return { low: null, high: parseFloat(m[1]) };
   m = t.match(/^(?:>|>=|above|more than|over)\s*(-?\d+(?:\.\d+)?)$/);
@@ -17,7 +17,7 @@ export function parseRange(text) {
 
 export function numericValue(v) {
   if (v == null) return null;
-  const m = String(v).trim().match(/^(-?\d+(?:\.\d+)?)/);
+  const m = String(v).trim().match(/^(-?\d+(?:\.\d+)?)$/);
   return m ? parseFloat(m[1]) : null;
 }
 
