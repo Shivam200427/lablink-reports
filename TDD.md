@@ -56,7 +56,7 @@ LIS CSV -> Express API -> database: SQLite locally, Postgres on the demo host (1
                 |            + critical-value callback tasks
                 |
 React SPA <─────┘  (patient portal / staff console / doctor view / ops)
-PDF reports: pdfkit, generated at sign-off and on demand
+PDF reports: pdfkit, generated at sign-off and on demand (cached file, regenerated from the database when missing). A4, zebra-striped result table with wrapped-row height safety, bold values and red HIGH/LOW flags, continuation pages repeat the table header and carry patient name + order code, every page footed with the sample-data disclaimer and page numbers.
 ```
 
 - **Backend:** Express, one async data layer (`server/db.js`) over better-sqlite3 locally and `pg` (Postgres) when `DATABASE_URL` is set, pdfkit.
