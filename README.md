@@ -1,4 +1,4 @@
-# LabLink - Lab Report Delivery for Company A, Vijayawada
+# LabLink - Lab Report Delivery for Company A
 
 **Live demo:** https://lablink-reports.onrender.com (free tier; sleeps when idle - first load can take ~50s; demo data persists on Render's free Postgres across restarts and deploys)
 
@@ -82,7 +82,4 @@ sample-data/  example LIS CSV export
 
 See `deployment.md` for deployment steps and `TDD.md` for the full design document.
 
-## Provenance
 
-Built by Shivam Jain with AI assistance (design, code and docs drafted with an AI
-pair-programmer and reviewed/edited by the author), as encouraged by the brief.
