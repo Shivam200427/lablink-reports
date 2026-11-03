@@ -221,7 +221,7 @@ lab-asserted and self-registered records) - `sms_budget` + `sms_real_claims`
 
 ## 10. Screens
 
-1. Patient self-registration (name, mobile, language, OTP + DPDP consent), linked from login
+1. Patient self-registration (name, mobile, language); OTP + DPDP consent on first verified access, linked from login
 2. Patient login (mobile + OTP) with DPDP consent on first use
 3. Family picker ("whose reports?") when one number covers several patients
 4. Patient report list
