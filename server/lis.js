@@ -126,7 +126,9 @@ export async function signOffOrder(orderId, signedBy = 'Duty Pathologist', actor
     await logAccess('system', null, 'callback_created', 'order', orderId, `critical ${r.parameter}`);
   }
   const summaries = await generateSummariesForOrder(orderId);
-  const pdfPath = await generateReportPDF(order, patient, order.doctor_id ? (await get('SELECT * FROM doctors WHERE id=?', [order.doctor_id])) : null, results);
+  // Reload after sign-off so the first PDF has the persisted signer and time.
+  const signedOrder = await get('SELECT * FROM orders WHERE id=?', [orderId]);
+  const pdfPath = await generateReportPDF(signedOrder, patient, order.doctor_id ? (await get('SELECT * FROM doctors WHERE id=?', [order.doctor_id])) : null, results);
   await logAccess(actor.type, actor.id, 'order_signed', 'order', orderId, `${order.order_code} -> ${status}; ${summaries} summaries`);
   return { ok: true, status, link, summaries, critical: critical.length, pdfPath };
 }
