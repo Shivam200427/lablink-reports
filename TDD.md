@@ -299,66 +299,10 @@ in the shared dialect (`substr()`, `AS` aliases, positional GROUP BY) to keep
 both engines happy; a CI job against real Postgres is future work. After every
 deploy the live API is smoke-checked directly (auth, each role, the report
 endpoint) before the build is called ready.
-## 13. Trade-offs, assumptions and honest limitations
 
-**Registration consent:** the brief asks for consent at registration. The app now records DPDP consent before patient details are saved on both app registration paths: patient self-registration refuses the request without consent, and front-desk walk-in entry requires both identity/contact attestation and the patient-consent tick. LIS-created records are treated as registrations already handled by the lab's upstream system; they receive no LabLink portal grant until staff attest the contact, and legacy records without a stored timestamp still complete consent at first verified access.
+## 13. Design decisions and trade-offs
 
-**Assumptions the lab must review before any real use:**
-
-- **Family access is grant-based, never phone-possession-based:** a login with a
-  mobile number sees exactly the patients with an active `patient_access` grant for
-  that number - nothing more. `patients.mobile` is message-routing data, not
-  authorization. Grants come only from a verifiable event: OTP-verified
-  self-registration (`self`, no staff involved), a staff contact attestation
-  (`contact`, at walk-in or via "verify contact"), or an explicit staff delegation
-  (`delegated`, revocable, with relation and granting staff member). Every grant,
-  attestation, merge decision and revoke lands in the access log. Residual risk:
-  the lab's attestation is a desk practice - if the front desk attests a number
-  without checking the person, the wrong person gets in. The system makes the
-  attestation explicit and attributed rather than implicit; the lab must staff it
-  honestly. Revoking any grant closes the door everywhere at once: portal login,
-  and already-open secure-link sessions (report and PDF return 403 on the next
-  request), because every link request re-checks that the grant behind it is
-  still active. Migration provenance is honest: the one-time backfill creates
-  `self` grants only where real OTP evidence existed and leaves pre-existing
-  lab-registered patients unverified until a genuine staff attestation - no
-  invented attestations - while the demo seed's grants are attributed to the
-  system (shown as "demo fixture (system)"), never to a staff member.
-  Mitigations in place: per-report OTP on secure links, 72-hour link
-  expiry, explicit revocable grants, and a full access log.
-- **Sample critical thresholds:** the critical limits in `server/kb.js` (e.g.
-  potassium, haemoglobin) are SAMPLE values chosen to exercise the critical
-  flow. They are NOT clinically approved - the pathologist must review and set
-  every threshold.
-- **Reference ranges come from the LIS CSV**, not from this app.
-- **Demo logins and all patient data are synthetic.**
-- **Stack choice** (Node/Express/SQLite+Postgres/React) was made for simplicity and
-  zero-cost hosting; any equivalent stack would fit the brief.
-
-**Limitations:**
-
-- **Database:** SQLite locally, Postgres on the demo host - one async data
-  layer (`server/db.js`) serves both. The current Voroa demo uses managed Postgres in Mumbai. The parallel Render database remains in Singapore and expires December 2, 2026. Both free demos have ephemeral app filesystems and idle sleep; PDFs regenerate from database records. Voroa shares 750 free running hours across app and database.
-- **Messaging, mocked by default:** no real SMS/WhatsApp leaves the box unless explicitly
-  enabled. The outbox proves the full pipeline. An optional demo-grade Fast2SMS Quick SMS
-  sender (`server/sms.js`, env `FAST2SMS_API_KEY` / `FAST2SMS_ALLOWED_RECIPIENT` /
-  `FAST2SMS_TOTAL_BUDGET`) sends real OTPs to the single allowed demo recipient only;
-  provider acceptance is stored as `sent` (never auto-`delivered`), failures are stored
-  `failed` with a mocked fallback copy, and a total-send budget (default 0) enforced by an
-  atomic row-locked counter UPDATE claimed before the provider call and never released -
-  concurrent requests cannot double-claim - plus the existing per-mobile OTP
-  rate limit bound wallet spend. Production rollout needs a DLT-registered transactional
-  route. OTPs are read from the staff outbox in the demo.
-- **AI provider:** the demo is configured for Google's Gemini free tier and
-  the full AI path was proven end-to-end against the real API (validated
-  `engine=ai` sentences, including Telugu). Only synthetic demo data is sent; a transient 503
-  was observed and the locked template took over, by design. No provider
-  was paid for this submission.
-- **Hosting:** the current Voroa demo app and PostgreSQL run in Mumbai. The parallel Render fallback remains in Singapore. The client's production hosting-in-India constraint is distinct from the take-home demo scope. Neither deployment is a DPDP/legal-compliance certification; AI processing and operational controls need their own review before real health data.
-- **PDFs are functional, not branded** like the lab's printed letterhead.
-- **LIS folder watch is host-dependent:** the app watches a folder
-  (`LIS_WATCH_DIR`, default `<data dir>/lis-incoming`) and imports dropped CSV
-  exports through the same pipeline as the manual upload. On the demo's cloud
-  host the lab's LIS machine cannot write to that disk, so the watch is
-  exercised in local/on-prem deployment; on the demo host the manual import
-  covers the flow.
+- **Assignment scope:** messages and external systems are mocked, as the brief permits. The demo shows sign-off, link generation, OTP access, delivery-state simulation and resend using synthetic data.
+- **LIS integration:** the folder watcher is implemented and tested locally. The hosted demo uses manual CSV import; unattended intake from the lab's export folder is not connected.
+- **Hosting:** the primary app and database run in Mumbai. Free hosting may sleep and has no automatic database backups; PDFs regenerate from database records.
+- **Before real patient use:** a pathologist must approve clinical thresholds and summary wording, and privacy/security controls need production review. Hosting in India alone is not proof of DPDP compliance.
