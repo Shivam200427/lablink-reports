@@ -4,7 +4,7 @@
 **Live app:** https://lablink-reports.getvoroa.com (Voroa app and PostgreSQL in Mumbai; synthetic demo). Parallel Render fallback: https://lablink-reports.onrender.com (Singapore). Both stay live. See deployment.md for current configuration and free-host limitations; no production compliance or uptime guarantee.
 
 **Product:** secure lab-report delivery for Company A, Vijayawada ("LabLink" is a demo brand name chosen for this submission)
-**Author:** Shivam Jain, built with AI assistance (the brief encourages AI) - **Date:** 3 November 2026 - **Stack:** Node.js 22 / Express / SQLite locally, Postgres on the demo host - React 19 / Vite / Tailwind
+**Author:** Shivam Jain, built with AI assistance (the brief encourages AI) - **Date:** 5 November 2026 - **Stack:** Node.js 22 / Express / SQLite locally, Postgres on the demo host - React 19 / Vite / Tailwind
 
 ---
 
@@ -67,7 +67,7 @@ PDF reports: pdfkit, generated at sign-off and on demand (cached file, regenerat
   bouncing to sign-in. Staff and doctor consoles are English-only and carry no switcher.
 - **Messaging:** `server/outbox.js` writes every WhatsApp/SMS/OTP to an `outbox` table and a
   ticker simulates send/delivered status. A real provider needs a durable dispatch worker, provider configuration and delivery-receipt handling.
-- **Tests:** 77 vitest integration tests (`tests/`: api, security, resilience, sms, liswatch) boot the
+- **Tests:** 78 vitest integration tests (`tests/`: api, security, resilience, sms, liswatch) boot the
   real app on a throwaway database.
 
 ## 5. Core flow
@@ -88,12 +88,14 @@ PDF reports: pdfkit, generated at sign-off and on demand (cached file, regenerat
 3. **Registration and enrolment (grant-based; OTP proves phone possession, not
    identity):** authorization comes only from `patient_access` grant rows - never from
    the contact mobile on file. Three grant kinds: **self** - self-registration
-   (name, mobile, language, OTP) creates an *empty* record (`created_via=self`) and the
-   first successful OTP verify creates its `self` grant over that empty record only;
-   **contact** - a staff member attests the patient's contact number, either inline at
-   walk-in entry (the form refuses submission without the attestation tick) or later
-   with "verify contact" in the console (required before any LIS-created patient can
-   log in); **delegated** - the front desk grants a relative's mobile access to one
+   requires DPDP consent before the name/mobile/language details are saved, creates an
+   *empty* record (`created_via=self`), and the first successful OTP verify creates its
+   `self` grant over that empty record only; a lost first OTP can be requested again
+   without creating access. **contact** - a staff member attests the patient's contact
+   number and records the patient's registration consent, either inline at walk-in entry
+   (the form refuses submission without both ticks) or later with "verify contact" in
+   the console (required before any LIS-created patient can log in); **delegated** - the
+   front desk grants a relative's mobile access to one
    patient, revocable. A LIS import never converges with a self-registered account on
    its own: an export row whose mobile + name matches one attaches to a lab-created
    record and raises a **pending identity match** (`patient_merges`); the front desk
@@ -101,7 +103,7 @@ PDF reports: pdfkit, generated at sign-off and on demand (cached file, regenerat
    people". A **name-only** row attaches to lab-created patients only, and only when
    exactly one matches - an ambiguous name is held with a staff-facing error asking
    for a Mobile column rather than guessing. A self-asserted name or a held phone
-   alone can never pull in someone else's report. Consent is recorded on first verified access before reports, not at the instant an empty registration record is created.
+   alone can never pull in someone else's report.
 4. **Delivery:** patient taps the link -> sees which report it is -> requests OTP -> OTP goes
    to the registered mobile (mocked) -> report opens.
 5. **After:** patient reads values + summaries, downloads the PDF, and can flag any summary
@@ -117,7 +119,7 @@ PDF reports: pdfkit, generated at sign-off and on demand (cached file, regenerat
 | Sessions | Random bearer tokens, hashed at rest, 12-hour expiry, scoped (a link-verified session can only read that one order). |
 | Family numbers | One mobile can serve many patients, but access comes from explicit per-patient grants, never from the number itself. A grant exists only after OTP-verified self-registration, a front-desk contact attestation (walk-in or verify-contact), or a delegated family grant. After OTP the user picks "whose reports" from only the patients they hold a grant for. Seeded demo families use system-labelled fixture grants, never attributed to a staff member. Revoking a grant immediately closes portal access and any already-open report links (403 access_revoked). |
 | Self-registration | OTP proves phone possession, not identity. A self-registered record is empty and marked `created_via=self`. Lab-asserted rows (LIS import or front-desk entry) never attach automatically: a same-mobile-and-name LIS import raises a **pending merge** that staff must explicitly attest before anything converges; name-only imports stay separate patients. A mobile already known to the lab cannot self-register (409). Ambiguous name-only rows (two lab patients with the same name) are held with an error, never guessed. |
-| Consent (DPDP) | Captured on **first verified access** on both enrolment paths: self-registration shows the consent notice after OTP verify, and lab-enrolled patients (created by LIS import) see it at first login. Acceptance (data used only to deliver lab reports, contact the lab to delete) is recorded with timestamp before any data is shown. |
+| Consent (DPDP) | Captured at **registration** on the app's registration paths: self-registration refuses to store details without the patient's DPDP consent, and front-desk walk-in entry refuses submission until staff record both identity/contact verification and the patient's consent. LIS-created records represent registrations already handled by the lab's upstream system (LIS changes are out of scope); LabLink grants them no portal access until staff attest the contact number. Legacy lab-enrolled records without a stored timestamp still see the consent notice at first verified access before reports. |
 | Access log | Every report view, OTP event, resend, flag and sign-off writes an `access_log` row (actor, action, subject, time) - the lab can show who saw what, when. |
 | Critical values | Never summarised, and the message for a critical report tells the patient the lab will call. A callback task is created so no critical result is silently delivered. |
 | Secrets in repo | None. Synthetic demo data only; staff passwords are scrypt-hashed; salt is an env var. |
@@ -221,7 +223,7 @@ lab-asserted and self-registered records) - `sms_budget` + `sms_real_claims`
 
 ## 10. Screens
 
-1. Patient self-registration (name, mobile, language); OTP + DPDP consent on first verified access, linked from login
+1. Patient self-registration (name, mobile, language) with DPDP consent before details are saved; OTP verification, linked from login
 2. Patient login (mobile + OTP) with DPDP consent on first use
 3. Family picker ("whose reports?") when one number covers several patients
 4. Patient report list
@@ -229,7 +231,7 @@ lab-asserted and self-registered records) - `sms_budget` + `sms_real_claims`
 6. Secure-link landing + OTP (the 72-hour link path)
 7. Staff login; signed-in staff get a hamburger menu grouped by task (Patients & orders / Messages & review / Insights) showing only the pages their role may use, plus sign-out; a forbidden page explains `403` without ending the session
 8. Staff console: patient search + resend
-9. Front-desk walk-in order entry (patient + test results, no CSV)
+9. Front-desk walk-in order entry (patient + test results, no CSV) with identity/contact and registration-consent attestations
 10. Staff message outbox: every mocked WhatsApp/SMS/OTP with delivery status, filterable by mobile and kind
 11. Staff tasks (critical callbacks + flagged summaries), weekly AI-summary review
 12. Pathologist import + sign-off: processing orders listed by public order code (ORD-xxxxx) with flag status - no internal ids
@@ -252,18 +254,19 @@ Messages render UTC event timestamps in India Standard Time with an explicit IST
 Signed CSV exports use a single database transaction for row ingestion and release. All rows are loaded before link/message/summary/callback creation. Exact repeats are ignored, amended signed results are held, and a failed release rolls back for retry. PostgreSQL uses a transaction-level import advisory lock and an order row lock. The mocked outbox is transactional; a future real provider needs a durable dispatch worker. PDF cache files are outside the database transaction and can leave replaceable orphan files on a failed attempt.
 
 
-`npm test` -> **77 vitest integration tests** against the real app on a temp database:
+`npm test` -> **78 vitest integration tests** against the real app on a temp database:
 
-- `tests/api.test.js` (32): flag rules (normal/high/low/critical), summary-engine
+- `tests/api.test.js` (33): flag rules (normal/high/low/critical), summary-engine
   safety (critical suppressed, unknown suppressed, disclaimer present, three
   languages), patient OTP login + consent + family scoping, patient self-registration (new
-  mobile registers empty, existing mobile is told to log in, OTP verify creates the
+  mobile cannot save without consent, registers empty with consent, can request a
+  replacement OTP before first verify, existing mobile is told to log in, OTP verify creates the
   self grant over the empty record) and its identity-linkage boundaries (name-only
   import never attaches to a self-registered identity, same-mobile different-name
   import stays a separate patient, mobile+name import raises a pending merge instead
   of converging, ambiguous name-only rows are held with a staff-facing error),
   grant-based authorization (no grant -> not registered, walk-in refuses without the
-  staff attestation, verify-contact unlocks an imported patient once, rejected merges
+  staff attestation or registration consent, verify-contact unlocks an imported patient once, rejected merges
   stay separate, a merge confirm without explicit staff attestation is refused with
   400, revoking a contact grant immediately closes active secure-link sessions with
   403 on report and PDF, and all 31 per-test templates exist in both directions and
