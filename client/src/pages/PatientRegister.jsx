@@ -12,6 +12,7 @@ export default function PatientRegister() {
   const [mobile, setMobile] = React.useState('');
   const [age, setAge] = React.useState('');
   const [sex, setSex] = React.useState('');
+  const [consent, setConsent] = React.useState(false);
   const [code, setCode] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
@@ -19,10 +20,10 @@ export default function PatientRegister() {
   async function register(e) {
     e.preventDefault(); setBusy(true); setError('');
     const r = await api('/api/auth/patient/register', { method: 'POST',
-      body: { fullName, mobile, language: lang, age: age || undefined, sex: sex || undefined } });
+      body: { fullName, mobile, language: lang, age: age || undefined, sex: sex || undefined, consent } });
     setBusy(false);
     if (r.status === 409) return setError(t(lang, 'alreadyRegistered'));
-    if (r.status === 400) return setError(t(lang, r.data?.error === 'invalid_name' ? 'invalidName' : 'wrongOtp'));
+    if (r.status === 400) return setError(t(lang, r.data?.error === 'invalid_name' ? 'invalidName' : r.data?.error === 'consent_required' ? 'consentRequired' : 'wrongOtp'));
     if (r.status === 429) return setError(t(lang, 'rateLimited'));
     if (!r.ok) return setError(t(lang, 'genericError'));
     setStep('otp');
@@ -57,8 +58,12 @@ export default function PatientRegister() {
             <select id="patientregister-4" className="input mb-4" value={sex} onChange={(e) => setSex(e.target.value)}>
               <option value="">-</option><option value="F">F</option><option value="M">M</option><option value="O">O</option>
             </select>
+            <label className="mb-4 flex items-start gap-3 rounded-xl border border-brand-100 bg-brand-50 p-3" htmlFor="patientregister-consent">
+              <input id="patientregister-consent" type="checkbox" className="mt-1 h-5 w-5" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+              <span className="text-sm leading-relaxed text-slate-700">{t(lang, 'consentText')}</span>
+            </label>
             {error && <p className="mb-3 text-base text-red-600">{error}</p>}
-            <button className="btn w-full" disabled={busy || fullName.trim().length < 2 || mobile.length !== 10}>{t(lang, 'registerBtn')}</button>
+            <button className="btn w-full" disabled={busy || !consent || fullName.trim().length < 2 || mobile.length !== 10}>{t(lang, 'registerBtn')}</button>
           </form>
         )}
         {step === 'otp' && (
