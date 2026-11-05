@@ -1,6 +1,6 @@
 # LabLink - Lab Report Delivery for Company A
 
-**Live demo:** https://lablink-reports.onrender.com (free tier; sleeps when idle - first load can take ~50s; demo data persists on Render's free Postgres across restarts and deploys)
+**Live demo:** https://lablink-reports.getvoroa.com (Voroa app and managed PostgreSQL in Mumbai; synthetic data; free tier can sleep when idle). **Parallel fallback:** https://lablink-reports.onrender.com (Render, Singapore).
 
 ("LabLink" is a demo brand name chosen for this submission; the client is "Company A" per the brief.)
 
@@ -64,7 +64,7 @@ then sign off the new orders and watch the outbox (staff console > Messages).
 ## Tests
 
 ```bash
-npm test     # 52 integration tests: flag rules, summary safety, OTP/consent/family,
+npm test     # 78 integration tests: flag rules, summary safety, OTP/consent/family,
              # grant-based access (attestation, merges, delegation, revocation),
              # per-test locked templates, sign-off
              # pipeline, secure links, staff console, CSV import, sms guard,
@@ -81,5 +81,4 @@ sample-data/  example LIS CSV export
 ```
 
 See `deployment.md` for deployment steps and `TDD.md` for the full design document.
-
 
