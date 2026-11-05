@@ -362,9 +362,3 @@ endpoint) before the build is called ready.
   host the lab's LIS machine cannot write to that disk, so the watch is
   exercised in local/on-prem deployment; on the demo host the manual import
   covers the flow.
-
-## 14. If we had more time
-
-Real WhatsApp Business API with delivery receipts; managed Postgres
-with backups and multi-branch support; audit export for the lab owner; push the callback task
-to the doctor too; ABHA/ABDM health-record linking.
