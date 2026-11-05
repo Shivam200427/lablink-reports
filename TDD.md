@@ -301,7 +301,7 @@ deploy the live API is smoke-checked directly (auth, each role, the report
 endpoint) before the build is called ready.
 ## 13. Trade-offs, assumptions and honest limitations
 
-**Open requirement gap:** the brief asks for consent at registration. The demo saves an empty registration before OTP and asks existing consent on verified access. Moving consent before saving details remains a user decision; this is not claimed as a requirements pass.
+**Registration consent:** the brief asks for consent at registration. The app now records DPDP consent before patient details are saved on both app registration paths: patient self-registration refuses the request without consent, and front-desk walk-in entry requires both identity/contact attestation and the patient-consent tick. LIS-created records are treated as registrations already handled by the lab's upstream system; they receive no LabLink portal grant until staff attest the contact, and legacy records without a stored timestamp still complete consent at first verified access.
 
 **Assumptions the lab must review before any real use:**
 
