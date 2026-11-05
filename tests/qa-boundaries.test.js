@@ -5,7 +5,7 @@ let app,db,flagResult,signOffOrder,hashPassword;
 beforeAll(async()=>{({app}=await import('../server/index.js'));({db}=await import('../server/db.js'));({flagResult}=await import('../server/flags.js'));({signOffOrder}=await import('../server/lis.js'));({hashPassword}=await import('../server/crypto.js'));db.prepare('INSERT INTO staff(username,password_hash,full_name,role) VALUES(?,?,?,?)').run('qa',hashPassword('pw'),'QA','frontdesk');});
 it('concurrent desk orders get unique codes and complete rows',async()=>{
  const a=request.agent(app);await a.post('/api/auth/staff/login').send({username:'qa',password:'pw'});
- const b={contactVerified:true,patientName:'Concurrent Synthetic',mobile:'9600000080',results:[{parameter:'Haemoglobin',value:'11',referenceRange:'12-15'}]};
+ const b={contactVerified:true,consentGiven:true,patientName:'Concurrent Synthetic',mobile:'9600000080',results:[{parameter:'Haemoglobin',value:'11',referenceRange:'12-15'}]};
  const r=await Promise.all([a.post('/api/staff/orders').send(b),a.post('/api/staff/orders').send(b)]);
  expect(r.map(x=>x.status)).toEqual([200,200]);expect(new Set(r.map(x=>x.body.orderCode)).size).toBe(2);
 });
