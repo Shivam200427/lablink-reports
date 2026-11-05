@@ -216,9 +216,17 @@ describe('csv import flags', () => {
 });
 
 describe('patient self-registration', () => {
+  it('requires consent before storing a self-registration', async () => {
+    const a = agent();
+    const r = await a.post('/api/auth/patient/register').send({ fullName: 'No Consent', mobile: '9800000076', language: 'en' });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe('consent_required');
+    expect(db.prepare("SELECT COUNT(*) c FROM patients WHERE mobile='9800000076'").get().c).toBe(0);
+  });
+
   it('registers a new patient with an empty record, OTP login, consent, no reports', async () => {
     const a = agent();
-    const reg = await a.post('/api/auth/patient/register').send({ fullName: 'Self Registered', mobile: '9800000077', language: 'te', age: 45, sex: 'F' });
+    const reg = await a.post('/api/auth/patient/register').send({ consent: true, fullName: 'Self Registered', mobile: '9800000077', language: 'te', age: 45, sex: 'F' });
     expect(reg.status).toBe(200);
     const code = await lastOTP('9800000077');
     const v = await a.post('/api/auth/patient/verify').send({ mobile: '9800000077', code, consent: true });
@@ -232,18 +240,18 @@ describe('patient self-registration', () => {
 
   it('rejects duplicate registration, invalid mobile and missing name', async () => {
     const a = agent();
-    const dup = await a.post('/api/auth/patient/register').send({ fullName: 'Test Patient Clone', mobile: '9800000001', language: 'en' });
+    const dup = await a.post('/api/auth/patient/register').send({ consent: true, fullName: 'Test Patient Clone', mobile: '9800000001', language: 'en' });
     expect(dup.status).toBe(409);
     expect(dup.body.error).toBe('already_registered');
-    const badM = await a.post('/api/auth/patient/register').send({ fullName: 'X Y', mobile: '123', language: 'en' });
+    const badM = await a.post('/api/auth/patient/register').send({ consent: true, fullName: 'X Y', mobile: '123', language: 'en' });
     expect(badM.status).toBe(400);
-    const badN = await a.post('/api/auth/patient/register').send({ fullName: 'x', mobile: '9800000078', language: 'en' });
+    const badN = await a.post('/api/auth/patient/register').send({ consent: true, fullName: 'x', mobile: '9800000078', language: 'en' });
     expect(badN.status).toBe(400);
   });
 
   it('LIS-imported results reach a self-registered account only after staff confirm the identity match', async () => {
     const a = agent();
-    await a.post('/api/auth/patient/register').send({ fullName: 'Merge Case', mobile: '9800000079', language: 'en' });
+    await a.post('/api/auth/patient/register').send({ consent: true, fullName: 'Merge Case', mobile: '9800000079', language: 'en' });
     const r = await importCSV('Order ID,Patient,Mobile,Parameter,Result,Reference Range,Status,Referring Doctor\nORD-T9,Merge Case,9800000079,LDL Cholesterol,142,0-100,Processing,Dr. Test\n');
     expect(r.newOrders).toBe(1);
     expect(r.newPatients).toBe(1); // separate lab record - the import never merges
@@ -257,14 +265,14 @@ describe('patient self-registration', () => {
     const m = merges.body.merges.find((x) => x.self_name === 'Merge Case');
     expect(m).toBeTruthy();
     expect((await s.post(`/api/staff/merges/${m.id}/confirm`)).status).toBe(400); // attestation required
-    expect((await s.post(`/api/staff/merges/${m.id}/confirm`).send({ attested: true })).body.ok).toBe(true);
+    expect((await s.post(`/api/staff/merges/${m.id}/confirm`).send({ attested: true, consentGiven: true })).body.ok).toBe(true);
     const orders = await a.get('/api/patient/orders');
     expect(orders.body.orders.map((o) => o.order_code)).toContain('ORD-T9');
   });
 
   it('never attaches name-only LIS rows (export without mobile) to a self-registered identity', async () => {
     const a = agent();
-    await a.post('/api/auth/patient/register').send({ fullName: 'Impersonation Target', mobile: '9800000080', language: 'en' });
+    await a.post('/api/auth/patient/register').send({ consent: true, fullName: 'Impersonation Target', mobile: '9800000080', language: 'en' });
     // attacker registers under a victim's exact name on their own phone;
     // a mobile-less LIS export row for that name arrives
     const r = await importCSV('Order ID,Patient,Parameter,Result,Reference Range,Status,Referring Doctor\nORD-T10,Impersonation Target,Potassium,6.8,3.5-5.1,Processing,Dr. Test\n');
@@ -278,7 +286,7 @@ describe('patient self-registration', () => {
 
   it('keeps a same-mobile different-name import as a separate lab patient', async () => {
     const a = agent();
-    await a.post('/api/auth/patient/register').send({ fullName: 'Household Self', mobile: '9800000081', language: 'en' });
+    await a.post('/api/auth/patient/register').send({ consent: true, fullName: 'Household Self', mobile: '9800000081', language: 'en' });
     const r = await importCSV('Order ID,Patient,Mobile,Parameter,Result,Reference Range,Status,Referring Doctor\nORD-T11,Household Other,9800000081,Haemoglobin,10.2,12.0-15.5,Processing,Dr. Test\n');
     expect(r.newPatients).toBe(1); // no silent identity merge
     const code = await lastOTP('9800000081');
@@ -292,14 +300,14 @@ describe('patient self-registration', () => {
     const plist = await s.get('/api/staff/patients?q=Household');
     const other = plist.body.patients.find((x) => x.full_name === 'Household Other');
     expect((await s.post(`/api/staff/patients/${other.id}/verify-contact`).send({})).status).toBe(400);
-    expect((await s.post(`/api/staff/patients/${other.id}/verify-contact`).send({ attested: true })).body.ok).toBe(true);
+    expect((await s.post(`/api/staff/patients/${other.id}/verify-contact`).send({ attested: true, consentGiven: true })).body.ok).toBe(true);
     me = await a.get('/api/patient/me');
     expect(me.body.patients.map((p) => p.full_name).sort()).toEqual(['Household Other', 'Household Self']);
   });
 
   it('converges repeated name-only imports on one lab patient, and a verified merge accepts later name-only rows', async () => {
     const a = agent();
-    await a.post('/api/auth/patient/register').send({ fullName: 'Converge Case', mobile: '9800000082', language: 'en' });
+    await a.post('/api/auth/patient/register').send({ consent: true, fullName: 'Converge Case', mobile: '9800000082', language: 'en' });
     const h = 'Order ID,Patient,Parameter,Result,Reference Range,Status,Referring Doctor\n';
     // name-only rows before any lab-verified identity: separate lab patient
     const r1 = await importCSV(h + 'ORD-T12,Converge Case,LDL Cholesterol,142,0-100,Processing,Dr. Test\n');
@@ -321,7 +329,7 @@ describe('patient self-registration', () => {
     const merges = await s.get('/api/staff/merges');
     const m = merges.body.merges.find((x) => x.self_name === 'Converge Case');
     expect((await s.post(`/api/staff/merges/${m.id}/confirm`)).status).toBe(400); // attestation required
-    expect((await s.post(`/api/staff/merges/${m.id}/confirm`).send({ attested: true })).body.ok).toBe(true);
+    expect((await s.post(`/api/staff/merges/${m.id}/confirm`).send({ attested: true, consentGiven: true })).body.ok).toBe(true);
     orders = await a.get('/api/patient/orders');
     const codes = orders.body.orders.map(o => o.order_code);
     expect(codes).toContain('ORD-T14'); // merged order visible after attestation
@@ -357,7 +365,7 @@ describe('manual front-desk order entry', () => {
     await staffLogin(a);
     const r = await a.post('/api/staff/orders').send({
       patientName: 'Walk In Patient', mobile: '9800000090', age: 52, sex: 'M',
-      doctorName: 'Dr. Test', contactVerified: true,
+      doctorName: 'Dr. Test', contactVerified: true, consentGiven: true,
       results: [{ parameter: 'Haemoglobin', value: '9.8', unit: 'g/dL', referenceRange: '12.0-15.5' }],
     });
     expect(r.status).toBe(200);
@@ -386,11 +394,11 @@ describe('manual front-desk order entry', () => {
 
   it('front-desk entry attaches to a matching self-registered account (staff attestation)', async () => {
     const p = agent();
-    await p.post('/api/auth/patient/register').send({ fullName: 'Desk Merge', mobile: '9800000091', language: 'en' });
+    await p.post('/api/auth/patient/register').send({ consent: true, fullName: 'Desk Merge', mobile: '9800000091', language: 'en' });
     const a = agent();
     await staffLogin(a);
     const r = await a.post('/api/staff/orders').send({
-      patientName: 'Desk Merge', mobile: '9800000091', contactVerified: true,
+      patientName: 'Desk Merge', mobile: '9800000091', contactVerified: true, consentGiven: true,
       results: [{ parameter: 'LDL Cholesterol', value: '142', referenceRange: '0-100' }],
     });
     expect(r.status).toBe(200);
@@ -404,7 +412,7 @@ describe('manual front-desk order entry', () => {
     const a = agent();
     await a.post('/api/auth/staff/login').send({ username: 'desk', password: 'pw123' });
     const r = await a.post('/api/staff/orders').send({
-      patientName: 'No Range Case', mobile: '9800000093', contactVerified: true,
+      patientName: 'No Range Case', mobile: '9800000093', contactVerified: true, consentGiven: true,
       // potassium has SAMPLE critical thresholds in the KB; a missing range must
       // still NOT become critical/normal or produce any summary
       results: [{ parameter: 'Potassium', value: '6.8' }],
@@ -428,7 +436,7 @@ describe('manual front-desk order entry', () => {
     const a = agent();
     await staffLogin(a);
     // two patients on one household number (lab-asserted contact)
-    const mk = (name) => a.post('/api/staff/orders').send({ patientName: name, mobile: '9800000095', contactVerified: true, results: [{ parameter: 'LDL Cholesterol', value: '142', referenceRange: '0-100' }] });
+    const mk = (name) => a.post('/api/staff/orders').send({ patientName: name, mobile: '9800000095', contactVerified: true, consentGiven: true, results: [{ parameter: 'LDL Cholesterol', value: '142', referenceRange: '0-100' }] });
     const r1 = await mk('Household One'); expect(r1.status).toBe(200);
     const r2 = await mk('Household Two'); expect(r2.status).toBe(200);
     const plist = await a.get('/api/staff/patients?q=Household');
@@ -468,9 +476,9 @@ describe('manual front-desk order entry', () => {
     const a = agent();
     expect((await a.post('/api/staff/orders').send({ patientName: 'X Y', mobile: '9800000092', results: [{ parameter: 'Hb', value: '10' }] })).status).toBe(401);
     await staffLogin(a);
-    expect((await a.post('/api/staff/orders').send({ patientName: 'X Y', mobile: '123', contactVerified: true, results: [{ parameter: 'Hb', value: '10' }] })).status).toBe(400);
-    expect((await a.post('/api/staff/orders').send({ patientName: 'X Y', mobile: '9800000092', contactVerified: true, results: [] })).status).toBe(400);
-    expect((await a.post('/api/staff/orders').send({ patientName: 'X', mobile: '9800000092', contactVerified: true, results: [{ parameter: 'Hb', value: '10' }] })).status).toBe(400);
+    expect((await a.post('/api/staff/orders').send({ patientName: 'X Y', mobile: '123', contactVerified: true, consentGiven: true, results: [{ parameter: 'Hb', value: '10' }] })).status).toBe(400);
+    expect((await a.post('/api/staff/orders').send({ patientName: 'X Y', mobile: '9800000092', contactVerified: true, consentGiven: true, results: [] })).status).toBe(400);
+    expect((await a.post('/api/staff/orders').send({ patientName: 'X', mobile: '9800000092', contactVerified: true, consentGiven: true, results: [{ parameter: 'Hb', value: '10' }] })).status).toBe(400);
     const p = agent();
     await patientLogin(p, '9800000090'); // walk-in patient from the first test (known, consented)
     expect((await p.post('/api/staff/orders').send({ patientName: 'X Y', mobile: '9800000092', results: [{ parameter: 'Hb', value: '10' }] })).status).toBe(403);
@@ -488,8 +496,9 @@ describe('grant-based authorization', () => {
     const pl = await s.get('/api/staff/patients?q=No Grant Case');
     const pid = pl.body.patients[0].id;
     expect((await s.post(`/api/staff/patients/${pid}/verify-contact`).send({})).status).toBe(400); // attestation required
-    expect((await s.post(`/api/staff/patients/${pid}/verify-contact`).send({ attested: true })).body.ok).toBe(true);
-    expect((await s.post(`/api/staff/patients/${pid}/verify-contact`).send({ attested: true })).status).toBe(409); // once only
+    expect((await s.post(`/api/staff/patients/${pid}/verify-contact`).send({ attested: true })).status).toBe(400); // consent required
+    expect((await s.post(`/api/staff/patients/${pid}/verify-contact`).send({ attested: true, consentGiven: true })).body.ok).toBe(true);
+    expect((await s.post(`/api/staff/patients/${pid}/verify-contact`).send({ attested: true, consentGiven: true })).status).toBe(409); // once only
     await patientLogin(p, '9800000085');
     const orders = await p.get('/api/patient/orders');
     expect(orders.body.orders.map((o) => o.order_code)).toContain('ORD-T20');
@@ -501,20 +510,26 @@ describe('grant-based authorization', () => {
     const r = await s.post('/api/staff/orders').send({ patientName: 'No Attest', mobile: '9800000086', results: [{ parameter: 'Haemoglobin', value: '10' }] });
     expect(r.status).toBe(400);
     expect(r.body.error).toBe('contact_attestation_required');
+    const noConsent = await s.post('/api/staff/orders').send({ patientName: 'No Walkin Consent', mobile: '9800000075', contactVerified: true, results: [{ parameter: 'Haemoglobin', value: '10' }] });
+    expect(noConsent.status).toBe(400);
+    expect(noConsent.body.error).toBe('consent_required');
+    expect(db.prepare("SELECT COUNT(*) c FROM patients WHERE mobile='9800000075'").get().c).toBe(0);
     expect((await agent().post('/api/auth/patient/request-otp').send({ mobile: '9800000086' })).status).toBe(404);
   });
 
-  it('self-registration holds no grant until the first OTP verify, and only over its own empty record', async () => {
+  it('self-registration can resume OTP delivery but holds no grant until verify, and only over its own empty record', async () => {
     const p = agent();
-    await p.post('/api/auth/patient/register').send({ fullName: 'Fresh Self', mobile: '9800000087', language: 'en' });
-    // no grant before the first successful verify: a fresh OTP request is refused
-    expect((await p.post('/api/auth/patient/request-otp').send({ mobile: '9800000087' })).status).toBe(404);
+    await p.post('/api/auth/patient/register').send({ consent: true, fullName: 'Fresh Self', mobile: '9800000087', language: 'en' });
+    // no grant before the first successful verify, but the pending self-registration
+    // can request a fresh OTP if the first code was lost or expired
+    expect((await p.post('/api/auth/patient/request-otp').send({ mobile: '9800000087' })).status).toBe(200);
+    expect(db.prepare("SELECT COUNT(*) c FROM patient_access WHERE mobile='9800000087'").get().c).toBe(0);
     const code = await lastOTP('9800000087');
-    const r1 = await p.post('/api/auth/patient/verify').send({ mobile: '9800000087', code });
-    expect(r1.body.needsConsent).toBe(true);
-    const v = await p.post('/api/auth/patient/verify').send({ mobile: '9800000087', code, consent: true });
+    const v = await p.post('/api/auth/patient/verify').send({ mobile: '9800000087', code });
     expect(v.body.ok).toBe(true);
+    expect(v.body.needsConsent).toBe(false);
     expect(v.body.patients.map((x) => x.full_name)).toEqual(['Fresh Self']);
+    expect(db.prepare("SELECT consent_given_at FROM patients WHERE mobile='9800000087'").get().consent_given_at).toBeTruthy();
     expect((await p.get('/api/patient/orders')).body.orders).toEqual([]);
     const g = db.prepare("SELECT * FROM patient_access WHERE mobile='9800000087'").all();
     expect(g).toHaveLength(1);
@@ -526,7 +541,7 @@ describe('grant-based authorization', () => {
     const s = agent();
     await staffLogin(s);
     const r = await s.post('/api/staff/orders').send({
-      patientName: 'Revoke Link', mobile: '9800000089', contactVerified: true,
+      patientName: 'Revoke Link', mobile: '9800000089', contactVerified: true, consentGiven: true,
       results: [{ parameter: 'LDL Cholesterol', value: '142', referenceRange: '0-100' }],
     });
     expect(r.status).toBe(200);
@@ -574,7 +589,7 @@ describe('grant-based authorization', () => {
 
   it('a rejected merge keeps the lab record separate', async () => {
     const a = agent();
-    await a.post('/api/auth/patient/register').send({ fullName: 'Reject Case', mobile: '9800000088', language: 'en' });
+    await a.post('/api/auth/patient/register').send({ consent: true, fullName: 'Reject Case', mobile: '9800000088', language: 'en' });
     const r = await importCSV('Order ID,Patient,Mobile,Parameter,Result,Reference Range,Status,Referring Doctor\nORD-T21,Reject Case,9800000088,LDL Cholesterol,142,0-100,Processing,Dr. Test\n');
     expect(r.pendingMerges).toBe(1);
     const s = agent();
