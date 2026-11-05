@@ -4,7 +4,7 @@
 **Live app:** https://lablink-reports.getvoroa.com (Voroa app and PostgreSQL in Mumbai; synthetic demo). Parallel Render fallback: https://lablink-reports.onrender.com (Singapore). Both stay live. See deployment.md for current configuration and free-host limitations; no production compliance or uptime guarantee.
 
 **Product:** secure lab-report delivery for Company A, Vijayawada ("LabLink" is a demo brand name chosen for this submission)
-**Author:** Shivam Jain, built with AI assistance (the brief encourages AI) - **Date:** 5 November 2026 - **Stack:** Node.js 22 / Express / SQLite locally, Postgres on the demo host - React 19 / Vite / Tailwind
+**Author:** shivam jain - **Date:** 5 November 2026 - **Stack:** Node.js 22 / Express / SQLite locally, Postgres on the demo host - React 19 / Vite / Tailwind
 
 ---
 
