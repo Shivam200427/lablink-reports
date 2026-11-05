@@ -100,7 +100,8 @@ app.post('/api/auth/patient/request-otp', async (req, res) => {
   const mobile = String(req.body.mobile || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
   if (!/^\d{10}$/.test(mobile)) return res.status(400).json({ error: 'invalid_mobile' });
   const known = (await authorizedPatientIds(mobile)).length > 0;
-  if (!known) {
+  const selfRegistrationPending = !known && (await get("SELECT 1 AS x FROM patients WHERE mobile=? AND created_via='self' AND merged_into IS NULL", [mobile]));
+  if (!known && !selfRegistrationPending) {
     await logAccess('anonymous', null, 'otp_unknown_mobile', 'mobile', null, mask(mobile));
     return res.status(404).json({ error: 'not_registered' });
   }
@@ -109,14 +110,14 @@ app.post('/api/auth/patient/request-otp', async (req, res) => {
   res.json({ ok: true });
 });
 
-// Self-registration for patients whose number is not yet known. Creates an
-// EMPTY patient record - no reports are attached at registration, and no grant
-// exists until the first successful OTP verify (see ensureSelfGrants). Lab
-// reports reach the account ONLY through staff identity attestation: a
-// confirmed merge (patient_merges) or a front-desk walk-in entry. A LIS import
-// never converges with a self-registered record on its own (see lis.js).
-// Numbers already known (registered at a lab/collection centre) are told to
-// log in instead.
+// Self-registration for patients whose number is not yet known. Consent is
+// required BEFORE any registration details are stored. The record created here
+// is still EMPTY - no reports are attached at registration, and no grant exists
+// until the first successful OTP verify (see ensureSelfGrants). Lab reports
+// reach the account ONLY through staff identity attestation: a confirmed merge
+// (patient_merges) or a front-desk walk-in entry. A LIS import never converges
+// with a self-registered record on its own (see lis.js). Numbers already known
+// (registered at a lab/collection centre) are told to log in instead.
 app.post('/api/auth/patient/register', async (req, res) => {
   const mobile = String(req.body.mobile || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
   const fullName = String(req.body.fullName || '').trim();
@@ -124,14 +125,17 @@ app.post('/api/auth/patient/register', async (req, res) => {
   if (!/^\d{10}$/.test(mobile)) return res.status(400).json({ error: 'invalid_mobile' });
   if (fullName.length < 2 || fullName.length > 80) return res.status(400).json({ error: 'invalid_name' });
   if (!['en', 'te', 'hi'].includes(language)) return res.status(400).json({ error: 'bad_lang' });
+  if (req.body.consent !== true) return res.status(400).json({ error: 'consent_required' });
   const known = (await get('SELECT COUNT(*) c FROM patients WHERE mobile=?', [mobile])).c > 0;
   if (known) return res.status(409).json({ error: 'already_registered' });
   const age = req.body.age == null || req.body.age === '' ? null : (typeof req.body.age === 'number' || (typeof req.body.age === 'string' && /^\d+$/.test(req.body.age))) ? Number(req.body.age) : NaN;
   if (age != null && (!Number.isInteger(age) || age < 0 || age > 120)) return res.status(400).json({ error: 'invalid_age' });
   let sex = String(req.body.sex || '').trim().toUpperCase();
   if (!['M', 'F', 'O'].includes(sex)) sex = null;
-  (await run("INSERT INTO patients (full_name, age, sex, mobile, preferred_language, created_via) VALUES (?,?,?,?,?,'self')", [fullName, age, sex, mobile, language]));
-  await logAccess('patient', null, 'patient_register', 'mobile', null, mask(mobile));
+  const consentAt = now();
+  const patientId = await insert("INSERT INTO patients (full_name, age, sex, mobile, preferred_language, created_via, consent_given_at) VALUES (?,?,?,?,?,'self',?)", [fullName, age, sex, mobile, language, consentAt]);
+  await logAccess('patient', patientId, 'patient_register', 'patient', patientId, mask(mobile));
+  await logAccess('patient', patientId, 'consent_given', 'patient', patientId, 'recorded before registration details were saved');
   const r = await requestOTP(mobile, 'login');
   if (r.error) return res.status(429).json(r);
   res.json({ ok: true });
@@ -406,16 +410,20 @@ app.get('/api/staff/patients/:id', requireRole('staff'), async (req, res) => {
 // Front-desk contact attestation for a lab-created patient: the ONLY way a
 // lab/imported record becomes reachable by its contact mobile. Without it the
 // patient exists for messaging but cannot log in - phone possession alone
-// grants nothing.
+// grants nothing. Staff also confirm that registration consent was collected
+// before enabling portal access.
 app.post('/api/staff/patients/:id/verify-contact', requireRole('staff'), async (req, res) => {
   if (req.body?.attested !== true) return res.status(400).json({ error: 'attestation_required' });
+  if (req.body?.consentGiven !== true) return res.status(400).json({ error: 'consent_required' });
   const p = (await get('SELECT * FROM patients WHERE id=?', [req.params.id]));
   if (!p) return res.status(404).json({ error: 'not_found' });
   if (String(p.mobile).startsWith('unknown-')) return res.status(400).json({ error: 'no_mobile' });
   const existing = (await get(`SELECT 1 AS x FROM patient_access WHERE patient_id=? AND mobile=? AND kind IN ('contact','self') AND revoked_at IS NULL`, [p.id, p.mobile]));
   if (existing) return res.status(409).json({ error: 'already_verified' });
+  if (!p.consent_given_at) await run('UPDATE patients SET consent_given_at=? WHERE id=?', [now(), p.id]);
   await insert("INSERT INTO patient_access (patient_id, mobile, kind, granted_by) VALUES (?,?,'contact',?)", [p.id, p.mobile, req.actor.id]);
   await logAccess('staff', req.actor.id, 'contact_verified', 'patient', p.id, mask(p.mobile));
+  await logAccess('staff', req.actor.id, 'consent_recorded', 'patient', p.id, 'registration consent confirmed before portal access');
   res.json({ ok: true });
 });
 
@@ -503,13 +511,15 @@ app.post('/api/staff/import', requireStaffRole('pathologist'), upload.single('fi
 // Manual front-desk entry: register a walk-in patient + order without the LIS
 // CSV. Staff see the person at the desk, so this endpoint is the lab's identity
 // attestation event - it REQUIRES contactVerified:true, and that attestation is
-// what creates the 'contact' grant that later lets the patient log in.
-// Without the attestation the entry is refused (400). The order lands in
-// processing; the pathologist reviews and signs as usual.
+// what creates the 'contact' grant that later lets the patient log in. Staff
+// must also record that the patient gave registration consent before any
+// patient details are stored. Without either attestation the entry is refused
+// (400). The order lands in processing; the pathologist reviews and signs as usual.
 app.post('/api/staff/orders', requireStaffRole('frontdesk'), async (req, res) => {
   return transaction(async () => {
   const b = req.body || {};
   if (b.contactVerified !== true) return res.status(400).json({ error: 'contact_attestation_required' });
+  if (b.consentGiven !== true) return res.status(400).json({ error: 'consent_required' });
   const fullName = String(b.patientName || '').trim();
   const mobile = String(b.mobile || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
   const doctorName = String(b.doctorName || '').trim();
@@ -533,9 +543,13 @@ app.post('/api/staff/orders', requireStaffRole('frontdesk'), async (req, res) =>
     await logAccess('staff', req.actor.id, 'patient_identity_attested', 'patient', patient.id, `self-registered ${fullName} attested at front desk`);
   }
   if (!patient) {
-    const pid = await insert('INSERT INTO patients (full_name, age, sex, mobile) VALUES (?,?,?,?)', [fullName, age, sex, mobile]);
+    const pid = await insert('INSERT INTO patients (full_name, age, sex, mobile, consent_given_at) VALUES (?,?,?,?,?)', [fullName, age, sex, mobile, now()]);
     patient = (await get('SELECT * FROM patients WHERE id=?', [pid]));
+  } else if (!patient.consent_given_at) {
+    await run('UPDATE patients SET consent_given_at=? WHERE id=?', [now(), patient.id]);
+    patient.consent_given_at = now();
   }
+  await logAccess('staff', req.actor.id, 'consent_recorded', 'patient', patient.id, 'patient consent collected at registration desk');
   // The staff attestation creates the contact grant that authorizes login.
   const hasGrant = (await get('SELECT 1 AS x FROM patient_access WHERE patient_id=? AND mobile=? AND revoked_at IS NULL', [patient.id, mobile]));
   if (!hasGrant) {
