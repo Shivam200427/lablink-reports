@@ -46,7 +46,7 @@ export default function StaffConsole() {
     if (r.ok) { loadMerges(); setMsg(action === 'confirm' ? 'Identity confirmed - the lab reports now show in the patient\'s account.' : 'Kept as separate patients.'); }
   }
   async function verifyContact(patientId) {
-    const r = await api(`/api/staff/patients/${patientId}/verify-contact`, { method: 'POST', body: { attested: true } });
+    const r = await api(`/api/staff/patients/${patientId}/verify-contact`, { method: 'POST', body: { attested: true, consentGiven: true } });
     if (r.ok) { setMsg('Contact number verified - the patient can now log in with OTP on it.'); open(patientId); }
   }
 
@@ -132,9 +132,10 @@ export default function StaffConsole() {
               <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
                 <p className="mb-2 text-sm text-slate-700">
                   The contact number {detail.patient.mobile} is <span className="font-semibold">not verified</span>, so this
-                  patient cannot log in yet. Verify it only with the patient at the desk.
+                  patient cannot log in yet. Verify it only with the patient at the desk and confirm that
+                  registration consent was collected.
                 </p>
-                <button className="btn px-3 py-1 text-sm" onClick={() => verifyContact(detail.patient.id)}>I verified this contact number</button>
+                <button className="btn px-3 py-1 text-sm" onClick={() => verifyContact(detail.patient.id)}>I verified contact and consent</button>
               </div>
             )}
             <div className="mb-3 space-y-2">
