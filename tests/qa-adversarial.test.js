@@ -13,7 +13,7 @@ describe('isolated adversarial QA',()=>{
  });
  it('rejects malformed non-integral age rather than silently truncating',async()=>{
   for(const age of ['45years','1.5',{},[], 'NaN',121,-1]){
-   const r=await request(app).post('/api/auth/patient/register').send({fullName:'QA Synthetic',mobile:'9600000002',age});
+   const r=await request(app).post('/api/auth/patient/register').send({consent:true,fullName:'QA Synthetic',mobile:'9600000002',age});
    expect(r.status,JSON.stringify(age)).toBe(400);
   }
  });
