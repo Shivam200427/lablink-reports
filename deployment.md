@@ -72,12 +72,11 @@ behind any HTTPS reverse proxy).
 
 ## 4. India data residency note
 
-The free-tier hosts above run outside India (Render has no India region on any
-plan - verified on Render's region docs). The brief asks for hosting in India,
-so this demo leaves that constraint openly unmet; no legal or residency
-compliance is claimed either way. For real Indian patient data, deploy in an
-India region (e.g. AWS `ap-south-1` Mumbai or Azure Central India) so reports
-and phone numbers stay in-country.
+The current Voroa demo app and managed PostgreSQL are in Mumbai; the parallel
+Render fallback remains in Singapore (Render has no India region on any plan,
+verified on Render's region docs). This is infrastructure placement, not legal
+or DPDP certification. For real Indian patient data, use an India region with
+backups, retention, monitoring, incident handling and legal review.
 
 ## 5. Production checklist (what a real rollout still needs)
 
@@ -119,7 +118,7 @@ and phone numbers stay in-country.
 - FAST2SMS variables were not copied to Voroa. All notifications/OTPs there stay in the mocked Messages outbox; nothing is sent to a real phone.
 - Database import was independently checked before later user/test activity: 17 patients, 19 orders, 63 results and 35 summaries, with the erased record absent across all 18 tables. Later records are not part of that restore baseline.
 - Git-URL deployments do not auto-deploy on push: trigger a redeploy after updating this repository. Render still auto-deploys the main branch.
-- The free service sleeps when idle. A temporary public-health check every 10 minutes is arranged through November 18, 2026, 15:38 IST. It is not an uptime guarantee or part of the product's architecture.
+- The free service can sleep when idle. Temporary public-health monitoring was paused after the monitoring request received a 403; no keep-awake coverage is currently active. This is not an uptime guarantee or part of the product architecture.
 - App and database share 750 free running hours per month. Continuous use of both consumes about 720 pooled hours in 15 days. No paid plan or payment method was added.
 - Filesystem storage is ephemeral. PDFs regenerate from PostgreSQL after a restart; unprocessed CSV files in the watch folder do not have durable storage. Folder arrivals do not wake a sleeping app. The free Render demo has the same sleep/ephemeral-file limitation.
 - The watcher polls `data/lis-incoming` every 5 seconds while the process runs. Production needs a durable LIS handoff and an always-running worker; this demo does not alter the client's LIS or ingest its real signed PDFs.
