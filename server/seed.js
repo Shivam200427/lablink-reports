@@ -10,7 +10,7 @@ import { flagResult } from './flags.js';
 import { findKBEntry } from './kb.js';
 import { signOffOrder } from './lis.js';
 
-const insPatient = 'INSERT INTO patients (full_name, age, sex, mobile, preferred_language) VALUES (?,?,?,?,?)';
+const insPatient = 'INSERT INTO patients (full_name, age, sex, mobile, preferred_language, consent_given_at) VALUES (?,?,?,?,?,?)';
 const insDoc = 'INSERT INTO doctors (full_name, mobile) VALUES (?,?)';
 const insStaff = 'INSERT INTO staff (username, password_hash, full_name, role) VALUES (?,?,?,?)';
 const insOrder = 'INSERT INTO orders (order_code, patient_id, doctor_id, status, ordered_at) VALUES (?,?,?,?,?)';
@@ -64,7 +64,10 @@ async function main() {
       await run(`DELETE FROM ${t}`);
   }
 
-  const P = (name, age, sex, mobile, lang) => insert(insPatient, [name, age, sex, mobile, lang]);
+  // Synthetic lab-registered patients stand in for people whose consent was
+  // collected by the lab at registration, before their details reached LabLink.
+  const registrationConsentAt = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const P = (name, age, sex, mobile, lang) => insert(insPatient, [name, age, sex, mobile, lang, registrationConsentAt]);
   const lakshmi = await P('Lakshmi Prasanna K', 62, 'F', '9000000001', 'te');
   const ramesh = await P('Ramesh K', 68, 'M', '9000000001', 'te');            // same family number
   const venkata = await P('Venkata Rao M', 55, 'M', '9000000002', 'te');
