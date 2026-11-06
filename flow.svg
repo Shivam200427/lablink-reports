@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="320" viewBox="0 0 760 320" font-family="'Times New Roman',serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#000"/>
+    </marker>
+  </defs>
+  <style>
+    .box{fill:#f7f7f7;stroke:#000;stroke-width:1.2}
+    .t{font-size:13px;fill:#000}
+    .s{font-size:11.5px;fill:#000}
+    .lbl{font-size:11px;fill:#000;font-style:italic}
+  </style>
+  <rect class="box" x="30" y="15" width="160" height="46"/>
+  <text class="t" x="110" y="35" text-anchor="middle">LIS CSV export</text>
+  <text class="s" x="110" y="51" text-anchor="middle">(upload or watched folder)</text>
+  <rect class="box" x="280" y="15" width="200" height="46"/>
+  <text class="t" x="380" y="35" text-anchor="middle">Express API (Node.js 22)</text>
+  <text class="s" x="380" y="51" text-anchor="middle">one async data layer in server/db.js</text>
+  <rect class="box" x="560" y="15" width="190" height="46"/>
+  <text class="t" x="655" y="35" text-anchor="middle">Database, 18 tables</text>
+  <text class="s" x="655" y="51" text-anchor="middle">SQLite locally, Postgres on demo host</text>
+  <line x1="190" y1="38" x2="276" y2="38" stroke="#000" stroke-width="1.2" marker-end="url(#arr)"/>
+  <line x1="480" y1="38" x2="556" y2="38" stroke="#000" stroke-width="1.2" marker-end="url(#arr)"/>
+  <rect class="box" x="30" y="115" width="190" height="58"/>
+  <text class="t" x="125" y="135" text-anchor="middle">React 19 SPA</text>
+  <text class="s" x="125" y="151" text-anchor="middle">patient portal / staff console /</text>
+  <text class="s" x="125" y="165" text-anchor="middle">doctor view / ops report</text>
+  <line x1="300" y1="61" x2="205" y2="112" stroke="#000" stroke-width="1.2" marker-end="url(#arr)" marker-start="url(#arr)"/>
+  <rect class="box" x="560" y="115" width="190" height="58"/>
+  <text class="t" x="655" y="135" text-anchor="middle">PDF reports</text>
+  <text class="s" x="655" y="151" text-anchor="middle">pdfkit, at sign-off and</text>
+  <text class="s" x="655" y="165" text-anchor="middle">on demand (cached)</text>
+  <line x1="460" y1="61" x2="570" y2="112" stroke="#000" stroke-width="1.2" marker-end="url(#arr)"/>
+  <line x1="380" y1="61" x2="380" y2="205" stroke="#000" stroke-width="1.2"/>
+  <text class="lbl" x="392" y="120">sign-off triggers, in one transaction:</text>
+  <rect class="box" x="30" y="240" width="220" height="58"/>
+  <text class="t" x="140" y="260" text-anchor="middle">72-hour secure link</text>
+  <text class="s" x="140" y="276" text-anchor="middle">WhatsApp/SMS via mocked outbox,</text>
+  <text class="s" x="140" y="290" text-anchor="middle">OTP gate at open</text>
+  <rect class="box" x="280" y="240" width="220" height="58"/>
+  <text class="t" x="390" y="260" text-anchor="middle">Plain-language summaries</text>
+  <text class="s" x="390" y="276" text-anchor="middle">English / Telugu / Hindi,</text>
+  <text class="s" x="390" y="290" text-anchor="middle">AI or locked template</text>
+  <rect class="box" x="530" y="240" width="220" height="58"/>
+  <text class="t" x="640" y="260" text-anchor="middle">Critical-value callback tasks</text>
+  <text class="s" x="640" y="276" text-anchor="middle">for the front-desk queue</text>
+  <line x1="380" y1="205" x2="140" y2="236" stroke="#000" stroke-width="1.2" marker-end="url(#arr)"/>
+  <line x1="380" y1="205" x2="390" y2="236" stroke="#000" stroke-width="1.2" marker-end="url(#arr)"/>
+  <line x1="380" y1="205" x2="640" y2="236" stroke="#000" stroke-width="1.2" marker-end="url(#arr)"/>
+</svg>
