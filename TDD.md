@@ -1,10 +1,16 @@
 # LabLink - Technical Design Document
 
-**GitHub:** https://github.com/Shivam200427/lablink-reports (public; full source and commit history)
-**Live app:** https://lablink-reports.getvoroa.com (Voroa app and PostgreSQL in Mumbai; synthetic demo). Parallel Render fallback: https://lablink-reports.onrender.com (Singapore). Both stay live. See deployment.md for the current configuration and free-host limits; there is no production compliance or uptime guarantee.
+| | |
+| --- | --- |
+| **Product** | Secure lab-report delivery for Company A, Vijayawada ("LabLink" is a demo brand name chosen for this submission) |
+| **Author** | shivam jain |
+| **Date** | 5 November 2026 |
+| **Stack** | Node.js 22 / Express; SQLite locally, Postgres on the demo host; React 19 / Vite / Tailwind |
+| **GitHub** | https://github.com/Shivam200427/lablink-reports (public; full source and commit history) |
+| **Live app** | https://lablink-reports.getvoroa.com (Voroa app and PostgreSQL in Mumbai; synthetic demo) |
+| **Fallback** | https://lablink-reports.onrender.com (Render, Singapore). Both stay live. |
 
-**Product:** secure lab-report delivery for Company A, Vijayawada ("LabLink" is a demo brand name chosen for this submission)
-**Author:** shivam jain - **Date:** 5 November 2026 - **Stack:** Node.js 22 / Express / SQLite locally, Postgres on the demo host - React 19 / Vite / Tailwind
+See deployment.md for the current configuration and free-host limits; there is no production compliance or uptime guarantee.
 
 ---
 
@@ -36,27 +42,19 @@ Role checks run on the server, not just in the UI. Only a pathologist can import
 
 A single-process monolith, deliberately boring so a small lab can run it anywhere:
 
-```
-LIS CSV -> Express API -> database: SQLite locally, Postgres on the demo host (18 tables)
-                |
-                +─ sign-off -> 72h secure link + WhatsApp/SMS (mocked outbox)
-                |            + plain-language summaries en/te/hi (AI or locked template)
-                |            + critical-value callback tasks
-                |
-React SPA <─────┘  (patient portal / staff console / doctor view / ops)
-PDF reports: pdfkit, generated at sign-off and on demand (cached file, regenerated from the database when missing). A4, zebra-striped result table with wrapped-row height safety, bold values and red HIGH/LOW flags, continuation pages repeat the table header and carry patient name + order code, every page footed with the sample-data disclaimer and page numbers.
-```
+![LabLink architecture and delivery flow](flow.svg)
 
 - **Backend:** Express, one async data layer (`server/db.js`) over better-sqlite3 locally and `pg` (Postgres) when `DATABASE_URL` is set, plus pdfkit.
 - **Frontend:** React 19 + Vite + Tailwind, mobile-first, with large tap targets and large text. A globe language picker offers English, Telugu and Hindi, saved on the device. Every patient-facing page carries the switcher, and every error state (OTP failure, rate limit, network loss, invalid link) renders in the selected language. A lost connection shows a retry message instead of hanging or bouncing to sign-in. Staff and doctor consoles are English-only.
 - **Messaging:** `server/outbox.js` writes every WhatsApp/SMS/OTP to an `outbox` table, and a ticker simulates sent/delivered status. A real provider would need a durable dispatch worker, provider configuration and delivery-receipt handling.
+- **PDF reports:** pdfkit, generated at sign-off and on demand (cached file, regenerated from the database when missing). A4, zebra-striped result table with wrapped-row height safety, bold values and red HIGH/LOW flags; continuation pages repeat the table header and carry patient name and order code; every page is footed with the sample-data disclaimer and page numbers.
 - **Tests:** 78 vitest integration tests (`tests/`: api, security, resilience, sms, liswatch) boot the real app on a throwaway database.
 
 ## 5. Core flow
 
 1. **Import.** The pathologist uploads the LIS CSV (`sample-data/lis-export.csv`) or drops it in the watched export folder (`LIS_WATCH_DIR`, polled every 5 seconds; files move to `imported/` or `failed/` with access-log entries). The front desk can also register a walk-in patient directly, with no CSV; the order lands in the same sign-off queue. Rows are grouped by Order ID and attach to **lab-created** records by mobile plus name (or by name only when exactly one lab record matches). An import creates **no access grants**: a lab-created patient cannot log in until the front desk attests their contact number (step 3).
 2. **Sign-off.** The pathologist reviews the values and signs. A Ready/signed CSV export releases automatically once every row for that order has loaded. `signOffOrder()` then runs one transaction: it flips the order status, generates the report PDF, creates a **72-hour secure link**, queues the WhatsApp/SMS message, generates **plain-language summaries** for every out-of-range result in the patient's language, and creates a **callback task** for every critical value.
-3. **Registration and enrolment.** Access is grant-based: OTP proves phone possession, not identity. Authorization comes only from `patient_access` grant rows, never from the contact mobile on file. There are three grant kinds. **self**: self-registration requires DPDP consent before the name, mobile and language are saved, creates an *empty* record (`created_via=self`), and the first successful OTP verify creates a `self` grant over that empty record only; a lost first OTP can be requested again without creating access. **contact**: a staff member attests the patient's contact number and records the patient's registration consent, either inline at walk-in entry (the form refuses submission without both ticks) or later with "verify contact" in the console (required before any LIS-created patient can log in). **delegated**: the front desk grants a relative's mobile access to one patient, revocable. A LIS import never merges with a self-registered account on its own: an export row whose mobile and name match one attaches to a lab-created record and raises a **pending identity match** (`patient_merges`), and the front desk confirms "same person" (orders move to the account, audit-logged) or "different people". A **name-only** row attaches to lab-created patients only, and only when exactly one matches; an ambiguous name is held with a staff-facing error asking for a Mobile column rather than guessing. A self-asserted name or a held phone alone can never pull in someone else's report.
+3. **Registration and enrolment.** Access is grant-based: OTP proves phone possession, not identity, and authorization comes only from `patient_access` grant rows, never from the contact mobile on file. Three grant kinds cover every path. **self**: the patient registers with DPDP consent (details are not saved without it), which creates an empty record, and the first successful OTP verify creates the grant over that record only; a lost first OTP can be requested again without creating access. **contact**: a staff member attests the patient's number and records the patient's registration consent, either during walk-in entry (the form refuses submission without both) or later with "verify contact", which is required before any LIS-created patient can log in. **delegated**: the front desk grants a relative's mobile access to one patient, revocable. Imports never merge records on their own: a row that matches a self-registered account attaches to a lab-created record and raises a pending identity match (`patient_merges`) for staff to confirm (orders move to the account, audit-logged) or reject, and name-only rows attach only when exactly one lab patient matches; an ambiguous name is held with an error asking for a Mobile column. A self-asserted name or a held phone alone can never pull in someone else's report. Section 6 lists the hard rules behind this.
 4. **Delivery.** The patient taps the link, sees which report it is, requests an OTP, and the OTP goes to the registered mobile (mocked). Then the report opens.
 5. **After.** The patient reads values and summaries, downloads the PDF, and can flag any summary as wrong. The front desk sees flagged summaries and the critical-callback queue, and can resend the link (a new link with a new 72-hour window) when a patient calls.
 
@@ -67,11 +65,10 @@ PDF reports: pdfkit, generated at sign-off and on demand (cached file, regenerat
 | Report links | 128-bit random token; only the **SHA-256 hash** is stored. Expires **72 hours** after sign-off. Opening a link requires an OTP to the registered mobile - the link alone is never enough. |
 | OTP | 6 digits, 10-minute validity, SHA-256 hashed at rest, single-use, max **5 attempts** per code, and **3 requests per 10 minutes per mobile** to stop brute force and spam. |
 | Sessions | Random bearer tokens, hashed at rest, 12-hour expiry, scoped (a link-verified session can only read that one order). |
-| Family numbers | One mobile can serve many patients, but access comes from explicit per-patient grants, never from the number itself. A grant exists only after OTP-verified self-registration, a front-desk contact attestation (walk-in or verify-contact), or a delegated family grant. After OTP, the user picks "whose reports" from only the patients they hold a grant for. Seeded demo families use system-labelled fixture grants, never attributed to a staff member. Revoking a grant immediately closes portal access and any already-open report links (403 access_revoked). |
-| Self-registration | OTP proves phone possession, not identity. A self-registered record is empty and marked `created_via=self`. Lab-asserted rows (LIS import or front-desk entry) never attach automatically: a same-mobile-and-name LIS import raises a **pending merge** that staff must attest before anything merges; name-only imports stay separate patients. A mobile already known to the lab cannot self-register (409). Ambiguous name-only rows (two lab patients with the same name) are held with an error, never guessed. |
+| Family numbers | One mobile can serve many patients through explicit per-patient grants, never from the number itself. After OTP, the user picks "whose reports" from only the patients they hold a grant for. Seeded demo families use system-labelled fixture grants, never attributed to a staff member. Revoking a grant immediately closes portal access and any already-open report links (403 access_revoked). |
+| Self-registration | OTP proves phone possession, not identity. A self-registered record is empty and marked `created_via=self`. A mobile already known to the lab cannot self-register (409); lab-asserted rows never attach to it automatically. |
 | Consent (DPDP) | Captured at **registration** on the app's registration paths: self-registration refuses to store details without the patient's DPDP consent, and front-desk walk-in entry refuses submission until staff record both identity/contact verification and the patient's consent. LIS-created records represent registrations already handled by the lab's upstream system (LIS changes are out of scope); LabLink grants them no portal access until staff attest the contact number. Legacy lab-enrolled records without a stored timestamp still see the consent notice at first verified access, before reports. |
 | Access log | Every report view, OTP event, resend, flag and sign-off writes an `access_log` row (actor, action, subject, time), so the lab can show who saw what, when. |
-| Critical values | Never summarised. The message for a critical report tells the patient the lab will call, and a callback task is created, so no critical result is silently delivered. |
 | Secrets in repo | None. Synthetic demo data only; staff passwords are scrypt-hashed; the salt is an env var. |
 
 ## 7. AI summary engine (and its safety rules)
@@ -84,7 +81,7 @@ Out-of-range values get a plain-language sentence (`server/ai.js`). An AI model 
 
 **Safety rules, enforced in code and tested:**
 
-1. **A critical value is never sent to the AI and never summarised.** The result renders with its critical flag, and a callback task is created for the front desk.
+1. **A critical value is never sent to the AI and never summarised.** The result renders with its critical flag, the message for a critical report tells the patient the lab will call, and a callback task is created for the front desk - so no critical result is silently delivered.
 2. **Unknown analyte, or no knowledge-base entry, means no summary.** The engine stays silent rather than guess.
 3. **Locked prompt.** The AI is told to write one short sentence saying only that the test is above or below the normal range, quoting the exact value and range, in the patient's language (en/te/hi). No advice, no diagnosis, no treatment.
 4. **Every AI output is validated before it is stored** (`validateAISummary`): it must quote the exact result value, stay under 280 characters, and contain no advice, medication, diet, treatment or diagnosis wording. Any failure or provider error falls back to the locked template for that language.
@@ -138,17 +135,20 @@ Signed CSV exports use a single database transaction for row ingestion and relea
 
 `npm test` runs **78 vitest integration tests** against the real app on a temp database:
 
-- `tests/api.test.js` (33): flag rules (normal/high/low/critical), summary-engine safety (critical suppressed, unknown suppressed, disclaimer present, three languages), patient OTP login + consent + family scoping, patient self-registration (new mobile cannot save without consent, registers empty with consent, can request a replacement OTP before first verify, existing mobile is told to log in, OTP verify creates the self grant over the empty record) and its identity-linkage boundaries (name-only import never attaches to a self-registered identity, same-mobile different-name import stays a separate patient, mobile+name import raises a pending merge instead of converging, ambiguous name-only rows are held with a staff-facing error), grant-based authorization (no grant -> not registered, walk-in refuses without the staff attestation or registration consent, verify-contact unlocks an imported patient once, rejected merges stay separate, a merge confirm without explicit staff attestation is refused with 400, revoking a contact grant immediately closes active secure-link sessions with 403 on report and PDF, and all 31 per-test templates exist in both directions and all three languages), the full sign-off pipeline (link + message + summaries + callback task), secure link flow (expiry, OTP gate, wrong OTP attempts), staff console (resend, task completion, flag review), CSV import edge cases, manual front-desk order entry (create -> sign-off -> patient portal delivery, front-desk attachment to a self-registered account, role + input validation), and lab-verified delegation (grant/revoke, one patient only).
-- `tests/import-ready.test.js` (8): mixed-row Ready export release, repeat idempotence, changed signed results held, failed release rollback/retry, and incomplete orders held.
-- `tests/qa-adversarial.test.js` (5): concurrent OTP one-time consume, strict age, malformed/oversize JSON, invalid routes/injection-shaped input, expiry/purpose.
-- `tests/qa-boundaries.test.js` (4): concurrent desk orders, conservative numeric/range parsing, empty signoff refusal.
-- `tests/cookie.test.js` (2): isolated HTTP/HTTPS configuration, matching login/logout cookies and revoked sessions.
-- `tests/security.test.js` (9): anonymous and cross-patient denial, release/PDF guards, secure-link scope, OTP limits, flags and review roles.
-- `tests/dates.test.js` (3): Messages UTC-to-IST display, midnight date rollover and explicit offsets.
-- `tests/pdf-signoff.test.js` (1): first PDF gets persisted signer/time.
-- `tests/sms.test.js` (8): the optional real-sender path: mock by default, the row-locked budget claim cannot double-spend, provider rejections are labelled distinctly from mock sends, and the recipient gate holds.
-- `tests/resilience.test.js` (3): a hanging provider still falls back fast, a silent server hits the hard timeout, and the seed skips a populated database.
-- `tests/liswatch.test.js` (2): a CSV dropped in the watch folder is imported through the same pipeline and moved to `imported/`; a malformed file is moved to `failed/` and logged, never silently dropped.
+| Test file | Tests | What it proves |
+| --- | --- | --- |
+| `tests/api.test.js` | 33 | Flag rules (normal/high/low/critical); summary-engine safety (critical and unknown suppressed, disclaimer present, three languages); patient OTP login, consent and family scoping; self-registration and its identity-linkage boundaries; grant-based authorization and revoke-closes-access; all 31 per-test templates in both directions and all three languages; the full sign-off pipeline; secure-link flow; staff console actions; CSV import edge cases; walk-in entry; delegation. |
+| `tests/security.test.js` | 9 | Anonymous and cross-patient denial; release and PDF guards; secure-link scope; OTP limits; flag and review roles. |
+| `tests/import-ready.test.js` | 8 | Mixed-row Ready export release; exact repeats ignored; changed signed results held; failed release rolls back for retry; incomplete orders held. |
+| `tests/sms.test.js` | 8 | The optional real-sender path: mock by default; the row-locked budget claim cannot double-spend; provider rejections are labelled distinctly from mock sends; the recipient gate holds. |
+| `tests/qa-adversarial.test.js` | 5 | Concurrent OTP one-time consume; strict age; malformed/oversize JSON; invalid routes and injection-shaped input; expiry/purpose. |
+| `tests/qa-boundaries.test.js` | 4 | Concurrent desk orders; conservative numeric/range parsing; empty sign-off refusal. |
+| `tests/dates.test.js` | 3 | Messages UTC-to-IST display; midnight date rollover; explicit offsets. |
+| `tests/resilience.test.js` | 3 | A hanging provider still falls back fast; a silent server hits the hard timeout; the seed skips a populated database. |
+| `tests/cookie.test.js` | 2 | Isolated HTTP/HTTPS configuration; matching login/logout cookies and revoked sessions. |
+| `tests/liswatch.test.js` | 2 | A CSV dropped in the watch folder is imported and moved to `imported/`; a malformed file is moved to `failed/` and logged, never silently dropped. |
+| `tests/pdf-signoff.test.js` | 1 | The first PDF gets the persisted signer and time. |
+
 
 **Test-dialect caveat, stated plainly:** the suite runs on SQLite. Two bugs in the ops report (`date()` on a TEXT column; `day` as a bare column alias) were valid SQLite but invalid Postgres and only surfaced on the live deploy - found by hitting the deployed endpoint, fixed, and re-verified live. SQL is written in the shared dialect (`substr()`, `AS` aliases, positional GROUP BY) to keep both engines happy; a CI job against real Postgres is future work. After every deploy the live API is smoke-checked directly (auth, each role, the report endpoint) before the build is called ready.
 
